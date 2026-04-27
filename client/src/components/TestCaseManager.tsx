@@ -79,11 +79,15 @@ export function TestCaseManager() {
       exportedAt: new Date().toISOString(),
       cases: toExport,
     }
+    const filename =
+      toExport.length === 1
+        ? `${toExport[0].name.replace(/[^a-zA-Z0-9-_]/g, '-')}.json`
+        : 'mintara-test-cases.json'
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = 'mintara-test-cases.json'
+    a.download = filename
     a.click()
     URL.revokeObjectURL(url)
     exitSelecting()
