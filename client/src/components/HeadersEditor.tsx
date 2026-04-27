@@ -52,14 +52,7 @@ export function HeadersEditor({ headers, onChange }: HeadersEditorProps) {
   }
 
   const updateKV = (index: number, field: 'key' | 'value', val: string) => {
-    let finalVal = val
-    if (field === 'value' && val) {
-      const key = kvRows[index].key.trim()
-      if (key.toLowerCase() === 'authorization' && !val.toLowerCase().startsWith('bearer ')) {
-        finalVal = 'Bearer ' + val
-      }
-    }
-    const updated = kvRows.map((r, i) => (i === index ? { ...r, [field]: finalVal } : r))
+    const updated = kvRows.map((r, i) => (i === index ? { ...r, [field]: val } : r))
     setKVRows(updated)
     onChange(kvToHeaders(updated))
   }
@@ -119,7 +112,7 @@ export function HeadersEditor({ headers, onChange }: HeadersEditorProps) {
               />
               <Input
                 className="flex-1 h-7 text-xs"
-                placeholder="Value"
+                placeholder={row.key.trim().toLowerCase() === 'authorization' ? 'Bearer <token>' : 'Value'}
                 value={row.value}
                 onChange={(e) => updateKV(i, 'value', e.target.value)}
               />

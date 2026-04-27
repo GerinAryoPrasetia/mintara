@@ -57,3 +57,13 @@
     @apply bg-background text-foreground;
   }
 }
+
+@keyframes jump-highlight {
+  0%   { box-shadow: 0 0 0 2px #3b82f6; border-color: #3b82f6; }
+  70%  { box-shadow: 0 0 0 2px #3b82f6; border-color: #3b82f6; }
+  100% { box-shadow: 0 0 0 0px transparent; border-color: inherit; }
+}
+
+.jump-highlight {
+  animation: jump-highlight 1.8s ease forwards;
+}

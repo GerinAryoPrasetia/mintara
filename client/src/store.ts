@@ -50,6 +50,7 @@ interface AppStore {
 
   stopBulk: () => void
   runBulk: () => Promise<void>
+  retryBulkItem: (itemId: string) => Promise<void>
 }
 
 const DEFAULT_REQUEST: CompareRequest = {
@@ -184,7 +185,7 @@ export const useStore = create<AppStore>()(
               ...target,
               headers: { ...target.headers, ...extraHeaders },
             })),
-            normalization: request.normalization,
+            normalization: item.normalization ?? request.normalization,
           }
 
           try {
@@ -209,6 +210,52 @@ export const useStore = create<AppStore>()(
         }
 
         set({ isBulkRunning: false, bulkProgress: null })
+      },
+
+      retryBulkItem: async (itemId: string) => {
+        const { bulkItems, bulkResults, bulkSharedHeaders, usePerRequestHeaders, request } = get()
+        const idx = bulkResults.findIndex((r) => r.item.id === itemId)
+        if (idx === -1) return
+        // Use the current bulkItems entry so any edits made after the original run are picked up
+        const item = bulkItems.find((i) => i.id === itemId) ?? bulkResults[idx].item
+
+        set((state) => {
+          const results = [...state.bulkResults]
+          results[idx] = { item, result: null, error: null, status: 'running' }
+          return { bulkResults: results }
+        })
+
+        const extraHeaders = usePerRequestHeaders ? (item.headers ?? {}) : bulkSharedHeaders
+        const compareReq: CompareRequest = {
+          method: item.method,
+          path: item.path,
+          body: item.body,
+          targets: request.targets.map((target) => ({
+            ...target,
+            headers: { ...target.headers, ...extraHeaders },
+          })),
+          normalization: item.normalization ?? request.normalization,
+        }
+
+        try {
+          const result = await runCompareRequest(compareReq)
+          set((state) => {
+            const results = [...state.bulkResults]
+            results[idx] = { item, result, error: null, status: 'done' }
+            return { bulkResults: results }
+          })
+        } catch (err) {
+          set((state) => {
+            const results = [...state.bulkResults]
+            results[idx] = {
+              item,
+              result: null,
+              error: err instanceof Error ? err.message : 'Unknown error',
+              status: 'error',
+            }
+            return { bulkResults: results }
+          })
+        }
       },
     }),
     {

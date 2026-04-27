@@ -41,6 +41,7 @@ export interface BulkRequestItem {
   path: string        // path segment to append to target base URLs (e.g. "/api/v1/users")
   body?: unknown      // only for POST/PUT
   headers?: Record<string, string>  // used when usePerRequestHeaders = true
+  normalization?: NormalizationOptions  // overrides global normalization when set
 }
 
 export interface BulkItemResult {

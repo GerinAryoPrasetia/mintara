@@ -26,6 +26,7 @@ export function DiffViewer({ targetA, targetB, normalization }: DiffViewerProps)
 
   const aText = JSON.stringify(targetA.body, null, 2) ?? ''
   const bText = JSON.stringify(targetB.body, null, 2) ?? ''
+  const fullDiffTooLarge = aText.length + bText.length > 100_000
 
   return (
     <div className="space-y-4">
@@ -68,16 +69,22 @@ export function DiffViewer({ targetA, targetB, normalization }: DiffViewerProps)
       )}
 
       {/* Side-by-side full diff */}
-      <div className="border rounded-lg overflow-auto text-xs">
-        <ReactDiffViewer
-          oldValue={aText}
-          newValue={bText}
-          splitView={true}
-          leftTitle={targetA.name}
-          rightTitle={targetB.name}
-          useDarkTheme={false}
-        />
-      </div>
+      {fullDiffTooLarge ? (
+        <div className="border rounded-lg px-4 py-3 text-xs text-slate-500 bg-slate-50">
+          Full diff hidden — response too large ({Math.round((aText.length + bText.length) / 1024)}KB combined). Use the table above for field-level differences.
+        </div>
+      ) : (
+        <div className="border rounded-lg overflow-auto text-xs">
+          <ReactDiffViewer
+            oldValue={aText}
+            newValue={bText}
+            splitView={true}
+            leftTitle={targetA.name}
+            rightTitle={targetB.name}
+            useDarkTheme={false}
+          />
+        </div>
+      )}
     </div>
   )
 }

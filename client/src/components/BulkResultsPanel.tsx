@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, memo } from 'react'
+import { RotateCcw, ArrowUp } from 'lucide-react'
 import { Badge } from '../components_ui/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components_ui/ui/tabs'
 import { useStore } from '../store'
@@ -110,21 +111,18 @@ function ResponsePanelContent({
 // AccordionCard — one card per BulkItemResult
 // ---------------------------------------------------------------------------
 
-function AccordionCard({
+const AccordionCard = memo(function AccordionCard({
   entry,
   normalization,
+  onRetry,
+  retryDisabled,
 }: {
   entry: BulkItemResult
   normalization: NormalizationOptions
+  onRetry: (itemId: string) => void
+  retryDisabled: boolean
 }) {
   const [expanded, setExpanded] = useState(false)
-
-  // Auto-expand when item transitions away from 'pending'
-  useEffect(() => {
-    if (entry.status !== 'pending') {
-      setExpanded(true)
-    }
-  }, [entry.status])
 
   const { item, result, error, status } = entry
 
@@ -147,7 +145,7 @@ function AccordionCard({
   }
 
   return (
-    <div className="border rounded-lg bg-white overflow-hidden">
+    <div id={`result-item-${item.id}`} className="border rounded-lg bg-white overflow-hidden">
       {/* Card header */}
       <button
         type="button"
@@ -178,6 +176,37 @@ function AccordionCard({
         {/* Status badge */}
         <span className="shrink-0">{statusBadge()}</span>
 
+        {/* Jump to request button */}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            const el = document.getElementById(`request-item-${item.id}`)
+            if (!el) return
+            el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+            el.classList.remove('jump-highlight')
+            void el.offsetWidth
+            el.classList.add('jump-highlight')
+          }}
+          className="shrink-0 p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-slate-100 transition-colors"
+          title="Jump to request"
+        >
+          <ArrowUp className="h-3.5 w-3.5" />
+        </button>
+
+        {/* Retry button */}
+        {(status === 'done' || status === 'error') && (
+          <button
+            type="button"
+            disabled={retryDisabled}
+            onClick={(e) => { e.stopPropagation(); onRetry(item.id) }}
+            className="shrink-0 p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            title="Retry this request"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+          </button>
+        )}
+
         {/* Chevron */}
         <span className="text-slate-400 text-xs ml-1 shrink-0">{expanded ? '▲' : '▼'}</span>
       </button>
@@ -201,14 +230,14 @@ function AccordionCard({
       )}
     </div>
   )
-}
+})
 
 // ---------------------------------------------------------------------------
 // BulkResultsPanel — top-level export
 // ---------------------------------------------------------------------------
 
 export function BulkResultsPanel() {
-  const { bulkResults, bulkProgress, request } = useStore()
+  const { bulkResults, bulkProgress, isBulkRunning, request, retryBulkItem } = useStore()
 
   if (bulkResults.length === 0) return null
 
@@ -236,7 +265,9 @@ export function BulkResultsPanel() {
           <AccordionCard
             key={entry.item.id}
             entry={entry}
-            normalization={request.normalization}
+            normalization={entry.item.normalization ?? request.normalization}
+            onRetry={retryBulkItem}
+            retryDisabled={isBulkRunning}
           />
         ))}
       </div>

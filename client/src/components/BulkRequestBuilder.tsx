@@ -4,12 +4,15 @@ import Editor from '@monaco-editor/react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components_ui/ui/select'
 import { Button } from '../components_ui/ui/button'
 import { Input } from '../components_ui/ui/input'
-import { Trash2, Plus, ChevronDown, ChevronUp, Upload, Download } from 'lucide-react'
+import { Trash2, Plus, ChevronDown, ChevronUp, Upload, Download, Info, ArrowDown } from 'lucide-react'
 import { useStore } from '../store'
 import { HeadersEditor } from './HeadersEditor'
+import { NormalizationEditor } from './NormalizationEditor'
 import { QueryParamsEditor } from './QueryParamsEditor'
 import { TargetList } from './TargetList'
-import type { HttpMethod, BulkRequestItem } from '@mintara/shared'
+import type { HttpMethod, BulkRequestItem, NormalizationOptions } from '@mintara/shared'
+
+const DEFAULT_NORMALIZATION: NormalizationOptions = { ignoreFields: [], sortArrays: false }
 
 const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'DELETE']
 
@@ -70,12 +73,14 @@ export function BulkRequestBuilder() {
     usePerRequestHeaders,
     setUsePerRequestHeaders,
     isBulkRunning,
+    bulkResults,
     runBulk,
   } = useStore()
 
-  // Sets of item IDs with expanded body / headers panels
+  // Sets of item IDs with expanded body / headers / normalization panels
   const [expandedBody, setExpandedBody] = useState<Set<string>>(new Set())
   const [expandedHeaders, setExpandedHeaders] = useState<Set<string>>(new Set())
+  const [expandedNorm, setExpandedNorm] = useState<Set<string>>(new Set())
 
   // Per-item body editor error state
   const [editorErrors, setEditorErrors] = useState<Record<string, { body?: string }>>({})
@@ -83,6 +88,15 @@ export function BulkRequestBuilder() {
   // Import state
   const [importError, setImportError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  function jumpTo(id: string) {
+    const el = document.getElementById(id)
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    el.classList.remove('jump-highlight')
+    void el.offsetWidth // force reflow to restart animation
+    el.classList.add('jump-highlight')
+  }
 
   // Auto-add one item when list is empty on mount
   useEffect(() => {
@@ -117,6 +131,7 @@ export function BulkRequestBuilder() {
     // Clean up expansion state
     setExpandedBody((s) => { const n = new Set(s); n.delete(id); return n })
     setExpandedHeaders((s) => { const n = new Set(s); n.delete(id); return n })
+    setExpandedNorm((s) => { const n = new Set(s); n.delete(id); return n })
     setEditorErrors((prev) => { const next = { ...prev }; delete next[id]; return next })
   }
 
@@ -474,14 +489,28 @@ export function BulkRequestBuilder() {
             e.target.value = ''
           }}
         />
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => fileInputRef.current?.click()}
-        >
-          <Upload className="h-3.5 w-3.5 mr-1.5" />
-          Import from Excel / CSV
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <Upload className="h-3.5 w-3.5 mr-1.5" />
+            Import from Excel / CSV
+          </Button>
+          <div className="relative group">
+            <Info className="h-3.5 w-3.5 text-slate-400 cursor-help" />
+            <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-72 bg-slate-800 text-white text-xs rounded-md px-3 py-2 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
+              <p className="font-semibold mb-1">Supported CSV formats</p>
+              <p className="font-medium mt-1">Template format (columns):</p>
+              <p className="text-slate-300">METHOD, URL, QUERY PARAMS, REQUEST BODY, HEADERS</p>
+              <p className="font-medium mt-1">Activity Log format (columns):</p>
+              <p className="text-slate-300">METHOD, URLPATH, HEADERS, REQUESTBODY</p>
+              <p className="text-slate-400 mt-1">Headers and body columns expect JSON strings.</p>
+              <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-x-4 border-x-transparent border-t-4 border-t-slate-800" />
+            </div>
+          </div>
+        </div>
         <Button variant="outline" size="sm" onClick={downloadTemplate}>
           <Download className="h-3.5 w-3.5 mr-1.5" />
           Download Template
@@ -508,10 +537,13 @@ export function BulkRequestBuilder() {
           const showBody = item.method === 'POST' || item.method === 'PUT'
           const isBodyExpanded = expandedBody.has(item.id)
           const isHeadersExpanded = expandedHeaders.has(item.id)
+          const isNormExpanded = expandedNorm.has(item.id)
+          const hasCustomNorm = item.normalization !== undefined
           const itemErrors = editorErrors[item.id] ?? {}
+          const hasResult = bulkResults.some((r) => r.item.id === item.id && r.status !== 'pending')
 
           return (
-            <div key={item.id} className="border rounded-lg p-3 space-y-2 bg-white">
+            <div key={item.id} id={`request-item-${item.id}`} className="border rounded-lg p-3 space-y-2 bg-white">
               {/* Row: method + path + delete */}
               <div className="flex items-center gap-2">
                 <Select
@@ -535,6 +567,18 @@ export function BulkRequestBuilder() {
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateItem(item.id, { path: e.target.value })}
                 />
 
+                {hasResult && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    title="Jump to result"
+                    onClick={() => jumpTo(`result-item-${item.id}`)}
+                    className="shrink-0 text-slate-400 hover:text-blue-500"
+                  >
+                    <ArrowDown className="h-4 w-4" />
+                  </Button>
+                )}
+
                 <Button
                   variant="ghost"
                   size="icon"
@@ -556,8 +600,7 @@ export function BulkRequestBuilder() {
               </div>
 
               {/* Toggle buttons row */}
-              {(showBody || usePerRequestHeaders) && (
-                <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2">
                   {showBody && (
                     <button
                       type="button"
@@ -587,8 +630,27 @@ export function BulkRequestBuilder() {
                       )}
                     </button>
                   )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!hasCustomNorm) updateItem(item.id, { normalization: DEFAULT_NORMALIZATION })
+                      setExpandedNorm((s) => toggleExpand(s, item.id))
+                    }}
+                    className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded border transition-colors ${
+                      hasCustomNorm
+                        ? 'border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100'
+                        : 'border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                    }`}
+                  >
+                    Normalization{hasCustomNorm ? ' (custom)' : ''}
+                    {isNormExpanded ? (
+                      <ChevronUp className="h-3 w-3" />
+                    ) : (
+                      <ChevronDown className="h-3 w-3" />
+                    )}
+                  </button>
                 </div>
-              )}
 
               {/* Body editor */}
               {showBody && isBodyExpanded && (
@@ -633,6 +695,43 @@ export function BulkRequestBuilder() {
                       Apply to all
                     </button>
                   )}
+                </div>
+              )}
+
+              {/* Per-request normalization editor */}
+              {isNormExpanded && item.normalization && (
+                <div className="space-y-2 border-t pt-2">
+                  <NormalizationEditor
+                    id={item.id}
+                    value={item.normalization}
+                    onChange={(normalization) => updateItem(item.id, { normalization })}
+                  />
+                  <div className="flex items-center gap-3">
+                    {bulkItems.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const normalization = item.normalization
+                          setBulkItems(bulkItems.map((other) =>
+                            other.id === item.id ? other : { ...other, normalization }
+                          ))
+                        }}
+                        className="text-xs text-slate-500 hover:text-slate-800 underline underline-offset-2"
+                      >
+                        Apply to all
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateItem(item.id, { normalization: undefined })
+                        setExpandedNorm((s) => { const n = new Set(s); n.delete(item.id); return n })
+                      }}
+                      className="text-xs text-red-400 hover:text-red-600 underline underline-offset-2"
+                    >
+                      Reset to global
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
