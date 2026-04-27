@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware'
 import type { CompareRequest, CompareResult, BulkRequestItem, BulkItemResult } from '@mintara/shared'
 import { runCompareRequest } from './lib/api'
 
-interface SavedCase {
+export interface SavedCase {
   name: string
   mode: 'single' | 'bulk'
   config: CompareRequest
@@ -11,6 +11,12 @@ interface SavedCase {
   bulkItems?: BulkRequestItem[]
   bulkSharedHeaders?: Record<string, string>
   usePerRequestHeaders?: boolean
+}
+
+export interface SavedCasesExport {
+  version: 1
+  exportedAt: string
+  cases: SavedCase[]
 }
 
 interface AppStore {
@@ -29,6 +35,7 @@ interface AppStore {
   saveCase: (name: string) => void
   loadCase: (name: string) => void
   deleteCase: (name: string) => void
+  importCases: (incoming: SavedCase[], resolutions: Record<string, 'overwrite' | 'skip'>) => void
 
   // Mode
   mode: 'single' | 'bulk'
@@ -126,6 +133,22 @@ export const useStore = create<AppStore>()(
         set((state) => ({
           savedCases: state.savedCases.filter((c) => c.name !== name),
         }))
+      },
+
+      importCases: (incoming, resolutions) => {
+        set((state) => {
+          const result = [...state.savedCases]
+          for (const c of incoming) {
+            const idx = result.findIndex((e) => e.name === c.name)
+            if (idx === -1) {
+              result.push(c)
+            } else if (resolutions[c.name] === 'overwrite') {
+              result[idx] = c
+            }
+            // 'skip' or no resolution entry → leave existing untouched
+          }
+          return { savedCases: result }
+        })
       },
 
       // Mode
