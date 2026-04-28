@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
-import { Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-react'
+import { Plus, Trash2, ChevronDown, ChevronRight, Copy, Check } from 'lucide-react'
+import { buildCurl } from '../lib/curl'
 import { Button } from '../components_ui/ui/button'
 import { Input } from '../components_ui/ui/input'
 import { useStore } from '../store'
@@ -9,6 +10,7 @@ export function TargetList({ hideHeaders = false }: { hideHeaders?: boolean }) {
   const { request, setRequest } = useStore()
   const { targets } = request
   const [expanded, setExpanded] = useState<Record<number, boolean>>({})
+  const [copied, setCopied] = useState<Record<number, boolean>>({})
 
   const updateTarget = (index: number, field: 'name' | 'baseUrl', value: string) => {
     const updated = targets.map((t, i) => (i === index ? { ...t, [field]: value } : t))
@@ -40,6 +42,15 @@ export function TargetList({ hideHeaders = false }: { hideHeaders?: boolean }) {
 
   const toggleExpanded = (index: number) => {
     setExpanded((prev) => ({ ...prev, [index]: !prev[index] }))
+  }
+
+  const copyAsCurl = (index: number) => {
+    const target = targets[index]
+    const fullUrl = target.baseUrl.replace(/\/$/, '') + (request.path.startsWith('/') ? request.path : `/${request.path}`)
+    const curl = buildCurl(request.method, fullUrl, target.headers ?? {}, request.body)
+    navigator.clipboard.writeText(curl).catch(() => {})
+    setCopied((prev) => ({ ...prev, [index]: true }))
+    setTimeout(() => setCopied((prev) => ({ ...prev, [index]: false })), 1500)
   }
 
   return (
@@ -74,6 +85,15 @@ export function TargetList({ hideHeaders = false }: { hideHeaders?: boolean }) {
                   <span>Headers{headerCount > 0 ? ` (${headerCount})` : ''}</span>
                 </button>
               )}
+              <button
+                onClick={() => copyAsCurl(i)}
+                className="flex items-center shrink-0 px-1.5 py-1 rounded border bg-white hover:bg-slate-50 text-slate-500 hover:text-slate-700"
+                title="Copy as cURL"
+              >
+                {copied[i]
+                  ? <Check className="h-3.5 w-3.5 text-green-500" />
+                  : <Copy className="h-3.5 w-3.5" />}
+              </button>
               <Button
                 variant="ghost"
                 size="icon"
