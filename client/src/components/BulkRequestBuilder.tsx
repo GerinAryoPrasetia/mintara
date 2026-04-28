@@ -4,7 +4,8 @@ import Editor from '@monaco-editor/react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components_ui/ui/select'
 import { Button } from '../components_ui/ui/button'
 import { Input } from '../components_ui/ui/input'
-import { Trash2, Plus, ChevronDown, ChevronUp, Upload, Download, Info, ArrowDown } from 'lucide-react'
+import { Trash2, Plus, ChevronDown, ChevronUp, Upload, Download, Info, ArrowDown, Copy, Check } from 'lucide-react'
+import { buildCurl } from '../lib/curl'
 import { useStore } from '../store'
 import { HeadersEditor } from './HeadersEditor'
 import { NormalizationEditor } from './NormalizationEditor'
@@ -84,6 +85,21 @@ export function BulkRequestBuilder() {
 
   // Per-item body editor error state
   const [editorErrors, setEditorErrors] = useState<Record<string, { body?: string }>>({})
+
+  // Per-item copy-as-curl flash state
+  const [copiedItems, setCopiedItems] = useState<Record<string, boolean>>({})
+
+  function copyItemAsCurl(item: BulkRequestItem) {
+    const headers = usePerRequestHeaders ? (item.headers ?? {}) : bulkSharedHeaders
+    const curlBlocks = request.targets.map((target) => {
+      const fullUrl = target.baseUrl.replace(/\/$/, '') + (item.path.startsWith('/') ? item.path : `/${item.path}`)
+      const curl = buildCurl(item.method, fullUrl, { ...headers, ...target.headers }, item.body)
+      return `# ${target.name}\n${curl}`
+    })
+    navigator.clipboard.writeText(curlBlocks.join('\n\n')).catch(() => {})
+    setCopiedItems((prev) => ({ ...prev, [item.id]: true }))
+    setTimeout(() => setCopiedItems((prev) => ({ ...prev, [item.id]: false })), 1500)
+  }
 
   // Import state
   const [importError, setImportError] = useState<string | null>(null)
@@ -579,6 +595,15 @@ export function BulkRequestBuilder() {
                   </Button>
                 )}
 
+                <button
+                  onClick={() => copyItemAsCurl(item)}
+                  className="flex items-center shrink-0 px-1.5 py-1 rounded border bg-white hover:bg-slate-50 text-slate-400 hover:text-slate-700"
+                  title="Copy as cURL"
+                >
+                  {copiedItems[item.id]
+                    ? <Check className="h-3.5 w-3.5 text-green-500" />
+                    : <Copy className="h-3.5 w-3.5" />}
+                </button>
                 <Button
                   variant="ghost"
                   size="icon"
