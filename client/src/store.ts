@@ -326,8 +326,15 @@ export const useStore = create<AppStore>()(
       },
 
       saveCurrentCase: (name) => {
-        const { activeCaseName, saveCase } = get()
+        const { activeCaseName, saveCase, savedCases } = get()
         if (name) {
+          const existingCase = savedCases.find((c) => c.name === name)
+          if (existingCase && activeCaseName !== name) {
+            // Name already saved as a different case — just switch to it without
+            // overwriting the existing entry's data with the current working state.
+            set({ activeCaseName: name })
+            return
+          }
           saveCase(name)
         } else if (activeCaseName !== null) {
           saveCase(activeCaseName)
