@@ -5,17 +5,18 @@ import { useStore } from '../store'
 import { exportBulkJSON, exportBulkExcel, exportPNG } from '../lib/export'
 
 export function BulkExportButtons() {
-  const { bulkResults, isBulkRunning, bulkItemSummaries, bulkAggregateSummary } = useStore()
+  const { bulkResults, isBulkRunning, bulkItemSummaries, bulkAggregateSummary, activeCaseName } = useStore()
   const [exporting, setExporting] = useState<string | null>(null)
 
   if (bulkResults.length === 0 || isBulkRunning) return null
 
   const hasSummaries = Object.keys(bulkItemSummaries).length > 0
+  const baseName = (activeCaseName ?? 'mintara-bulk').replace(/[^a-zA-Z0-9-_]/g, '-')
 
   const handleExportJSON = () => {
     exportBulkJSON(
       bulkResults,
-      'mintara-bulk.json',
+      `${baseName}.json`,
       hasSummaries ? bulkItemSummaries : undefined,
       bulkAggregateSummary ?? undefined,
     )
@@ -26,7 +27,7 @@ export function BulkExportButtons() {
     try {
       await exportBulkExcel(
         bulkResults,
-        'mintara-bulk.xlsx',
+        `${baseName}.xlsx`,
         hasSummaries ? bulkItemSummaries : undefined,
         bulkAggregateSummary ?? undefined,
       )
@@ -38,7 +39,7 @@ export function BulkExportButtons() {
   const handleExportPNG = async () => {
     setExporting('png')
     try {
-      await exportPNG('bulk-results-panel', 'mintara-bulk.png')
+      await exportPNG('bulk-results-panel', `${baseName}.png`)
     } finally {
       setExporting(null)
     }

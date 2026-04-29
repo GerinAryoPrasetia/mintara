@@ -6,16 +6,17 @@ import { exportJSON, exportExcel, exportPNG } from '../lib/export'
 import { compare, normalize } from '@mintara/shared'
 
 export function ExportButtons() {
-  const { result, request, singleSummary } = useStore()
+  const { result, request, singleSummary, activeCaseName } = useStore()
   const [exporting, setExporting] = useState<string | null>(null)
 
   if (!result) return null
 
-  // e.g. "/api/v1/product" → "api-v1-product"
-  const pathSlug = request.path.replace(/^\/+/, '').replace(/\//g, '-') || 'export'
+  const baseName = activeCaseName
+    ? activeCaseName.replace(/[^a-zA-Z0-9-_]/g, '-')
+    : (request.path.replace(/^\/+/, '').replace(/\//g, '-') || 'export')
 
   const handleExportJSON = () => {
-    exportJSON(request, result, `mintara-${pathSlug}.json`, singleSummary ?? undefined)
+    exportJSON(request, result, `${baseName}.json`, singleSummary ?? undefined)
   }
 
   const handleExportExcel = async () => {
@@ -26,7 +27,7 @@ export function ExportButtons() {
       const normA = normalize(a.body, request.normalization)
       const normB = normalize(b.body, request.normalization)
       const diffNodes = compare(normA, normB, '')
-      await exportExcel(request, result, diffNodes, `mintara-${pathSlug}.xlsx`, singleSummary ?? undefined)
+      await exportExcel(request, result, diffNodes, `${baseName}.xlsx`, singleSummary ?? undefined)
     } finally {
       setExporting(null)
     }
@@ -35,7 +36,7 @@ export function ExportButtons() {
   const handleExportPNG = async () => {
     setExporting('png')
     try {
-      await exportPNG('diff-panel', `mintara-${pathSlug}.png`)
+      await exportPNG('diff-panel', `${baseName}.png`)
     } finally {
       setExporting(null)
     }
