@@ -13,9 +13,9 @@ export default function App() {
   const { result, error, mode, setMode, isBulkRunning, bulkResults } = useStore()
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div className="flex h-screen overflow-hidden bg-slate-50">
       <Sidebar />
-      <main className="flex-1 max-w-7xl mx-auto px-4 py-6 space-y-4">
+      <main className="flex-1 overflow-y-auto px-4 py-6 space-y-4 max-w-7xl">
         {/* Mode toggle */}
         <div className="flex rounded-lg border overflow-hidden w-fit">
           <button

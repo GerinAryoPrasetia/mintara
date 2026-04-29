@@ -178,9 +178,9 @@ export function Sidebar() {
   const isConflictView = conflicts.length > 0
 
   return (
-    <div className="flex flex-col bg-white border-r border-slate-200 w-56 shrink-0">
+    <div className="flex flex-col bg-white border-r border-slate-200 w-56 shrink-0 h-full overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-3 border-b border-slate-100">
+      <div className="flex items-center justify-between px-3 py-3 border-b border-slate-100 shrink-0">
         {!collapsed && <span className="text-sm font-semibold text-slate-700">Test Cases</span>}
         <div className="flex gap-1">
           <button onClick={() => newCase()} className="p-1.5 rounded hover:bg-slate-100" title="New test case">
@@ -194,7 +194,7 @@ export function Sidebar() {
 
       {/* Conflict resolution view */}
       {isConflictView ? (
-        <div className="flex-1 overflow-y-auto p-3 space-y-3">
+        <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-0">
           <p className="text-xs text-slate-600">The following cases already exist:</p>
           <div className="space-y-2 max-h-64 overflow-y-auto">
             {conflicts.map((c) => (
@@ -215,7 +215,7 @@ export function Sidebar() {
       ) : (
         <>
           {/* Case list */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto min-h-0">
             {isSelecting && savedCases.length > 0 && (
               <div className="flex items-center gap-2 px-3 py-1.5">
                 <Checkbox id="select-all" checked={allSelected} onCheckedChange={toggleSelectAll} />
@@ -287,7 +287,7 @@ export function Sidebar() {
           </div>
 
           {/* Save button area */}
-          <div className="px-3 py-2 border-t border-slate-100">
+          <div className="px-3 py-2 border-t border-slate-100 shrink-0">
             {saveOpen ? (
               <div className="flex gap-2">
                 <Input
@@ -325,7 +325,7 @@ export function Sidebar() {
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-between px-3 py-2 border-t border-slate-100">
+          <div className="flex items-center justify-between px-3 py-2 border-t border-slate-100 shrink-0">
             {!isSelecting ? (
               <>
                 <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleFileChange} />
