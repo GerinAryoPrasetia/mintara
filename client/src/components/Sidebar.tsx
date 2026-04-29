@@ -3,8 +3,8 @@ import { ChevronLeft, ChevronRight, Plus, Copy, Trash2, Download, Upload, Save }
 import { Button } from '../components_ui/ui/button'
 import { Input } from '../components_ui/ui/input'
 import { Checkbox } from '../components_ui/ui/checkbox'
-import { Badge } from '../components_ui/ui/badge'
 import { Separator } from '../components_ui/ui/separator'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components_ui/ui/dialog'
 import { useStore } from '../store'
 import type { SavedCase, SavedCasesExport } from '../store'
 
@@ -32,8 +32,17 @@ export function Sidebar() {
     const trimmed = saveName.trim()
     if (!trimmed) return
     saveCurrentCase(trimmed)
-    setSaveName('')
     setSaveOpen(false)
+  }
+
+  const openSaveDialog = () => {
+    setSaveName(activeCaseName ?? '')
+    setSaveOpen(true)
+  }
+
+  const handleSaveClose = () => {
+    setSaveOpen(false)
+    setSaveName('')
   }
 
   const handleSwitch = (name: string) => {
@@ -288,40 +297,15 @@ export function Sidebar() {
 
           {/* Save button area */}
           <div className="px-3 py-2 border-t border-slate-100 shrink-0">
-            {saveOpen ? (
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Case name"
-                  value={saveName}
-                  onChange={(e) => setSaveName(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSave()}
-                  autoFocus
-                  className="h-7 text-xs"
-                />
-                <Button size="sm" className="h-7 px-2" onClick={handleSave} disabled={!saveName.trim()}>
-                  <Save className="h-3.5 w-3.5" />
-                </Button>
-                <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => { setSaveOpen(false); setSaveName('') }}>
-                  ✕
-                </Button>
-              </div>
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full justify-start h-7 text-xs"
-                onClick={() => {
-                  if (activeCaseName) {
-                    saveCurrentCase()
-                  } else {
-                    setSaveOpen(true)
-                  }
-                }}
-              >
-                <Save className="h-3.5 w-3.5 mr-1" />
-                {activeCaseName ? 'Save' : 'Save As…'}
-              </Button>
-            )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full justify-start h-7 text-xs"
+              onClick={openSaveDialog}
+            >
+              <Save className="h-3.5 w-3.5 mr-1" />
+              {activeCaseName ? 'Save' : 'Save As…'}
+            </Button>
           </div>
 
           {/* Footer */}
@@ -349,6 +333,28 @@ export function Sidebar() {
           {importSummary && <p className="text-xs text-green-600 px-3 pb-1">{importSummary}</p>}
         </>
       )}
+
+      {/* Save Dialog */}
+      <Dialog open={saveOpen} onOpenChange={(open) => { if (!open) handleSaveClose(); else setSaveOpen(true) }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{activeCaseName ? 'Save Test Case' : 'Save Test Case As'}</DialogTitle>
+          </DialogHeader>
+          <div className="flex gap-2 mt-2">
+            <Input
+              placeholder="Test case name"
+              value={saveName}
+              onChange={(e) => setSaveName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+              autoFocus
+            />
+          </div>
+          <DialogFooter className="sm:justify-end">
+            <Button variant="outline" size="sm" onClick={handleSaveClose}>Cancel</Button>
+            <Button size="sm" onClick={handleSave} disabled={!saveName.trim()}>Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
