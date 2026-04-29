@@ -2,7 +2,7 @@ import React from 'react'
 import { RequestBuilder } from './components/RequestBuilder'
 import { ResponsePanel } from './components/ResponsePanel'
 import { ExportButtons } from './components/ExportButtons'
-import { TestCaseManager } from './components/TestCaseManager'
+import { Sidebar } from './components/Sidebar'
 import { BulkRequestBuilder } from './components/BulkRequestBuilder'
 import { BulkProgressBar } from './components/BulkProgressBar'
 import { BulkResultsPanel } from './components/BulkResultsPanel'
@@ -13,16 +13,9 @@ export default function App() {
   const { result, error, mode, setMode, isBulkRunning, bulkResults } = useStore()
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="bg-white border-b px-6 py-3 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900">mintara</h1>
-          <p className="text-xs text-slate-500">API Response Comparison Tool</p>
-        </div>
-        <TestCaseManager />
-      </header>
-
-      <main className="max-w-7xl mx-auto px-4 py-6 space-y-4">
+    <div className="flex min-h-screen bg-slate-50">
+      <Sidebar />
+      <main className="flex-1 max-w-7xl mx-auto px-4 py-6 space-y-4">
         {/* Mode toggle */}
         <div className="flex rounded-lg border overflow-hidden w-fit">
           <button

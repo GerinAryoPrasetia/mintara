@@ -1,6 +1,8 @@
 import React, { useState } from 'react'
+import { Sparkles } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components_ui/ui/tabs'
 import { Badge } from '../components_ui/ui/badge'
+import { Button } from '../components_ui/ui/button'
 import { useStore } from '../store'
 import { DiffViewer } from './DiffViewer'
 
@@ -16,8 +18,9 @@ function pairwise<T>(arr: T[]): [T, T][] {
 }
 
 export function ResponsePanel() {
-  const { result, request } = useStore()
+  const { result, request, singleSummary, singleSummaryLoading, generateSingleSummary } = useStore()
   const [activePair, setActivePair] = useState<string>('0-1')
+  const [summaryExpanded, setSummaryExpanded] = useState(false)
 
   if (!result) return null
 
@@ -31,16 +34,32 @@ export function ResponsePanel() {
     return 'bg-yellow-100 text-yellow-800'
   }
 
+  const handleSummarize = async () => {
+    setSummaryExpanded(true)
+    await generateSingleSummary()
+  }
+
   return (
     <div id="diff-panel" className="space-y-4 p-4 border rounded-lg bg-white">
-      <h2 className="text-lg font-semibold text-slate-800">
-        Results
-        {result.hasChanges ? (
-          <Badge className="ml-2 bg-yellow-100 text-yellow-800">Changes Detected</Badge>
-        ) : (
-          <Badge className="ml-2 bg-green-100 text-green-800">Identical</Badge>
-        )}
-      </h2>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <h2 className="text-lg font-semibold text-slate-800">
+          Results
+          {result.hasChanges ? (
+            <Badge className="ml-2 bg-yellow-100 text-yellow-800">Changes Detected</Badge>
+          ) : (
+            <Badge className="ml-2 bg-green-100 text-green-800">Identical</Badge>
+          )}
+        </h2>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleSummarize}
+          disabled={singleSummaryLoading}
+        >
+          <Sparkles className="h-4 w-4 mr-1" />
+          {singleSummaryLoading ? 'Summarizing…' : 'AI Summary'}
+        </Button>
+      </div>
 
       {/* Per-target status badges */}
       <div className="flex flex-wrap gap-3">
@@ -58,6 +77,30 @@ export function ResponsePanel() {
           </div>
         ))}
       </div>
+
+      {/* AI Summary card */}
+      {(singleSummary || singleSummaryLoading) && (
+        <div className="border rounded-md bg-purple-50 border-purple-200">
+          <button
+            type="button"
+            onClick={() => setSummaryExpanded((v) => !v)}
+            className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm font-medium text-purple-800"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            AI Summary
+            <span className="ml-auto text-xs text-purple-400">{summaryExpanded ? '▲' : '▼'}</span>
+          </button>
+          {summaryExpanded && (
+            <div className="px-3 pb-3">
+              {singleSummaryLoading ? (
+                <p className="text-sm text-purple-600 italic">Generating summary…</p>
+              ) : (
+                <p className="text-sm text-slate-700 whitespace-pre-wrap">{singleSummary}</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Pairwise diff tabs */}
       {pairs.length === 1 ? (

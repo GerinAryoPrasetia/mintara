@@ -31,6 +31,7 @@ compareRouter.post('/compare', async (req, res) => {
       const fullUrl = target.baseUrl.replace(/\/$/, '') + (path.startsWith('/') ? path : `/${path}`)
       const start = Date.now()
       try {
+        console.log(`[${target.name}] ${method.toUpperCase()} ${fullUrl}`)
         const response = await axios({
           method: method.toLowerCase(),
           url: fullUrl,

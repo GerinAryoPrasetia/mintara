@@ -3,12 +3,18 @@ import html2canvas from 'html2canvas'
 import type { CompareRequest, CompareResult, DiffNode, BulkItemResult } from '@mintara/shared'
 import { compare, normalize } from '@mintara/shared'
 
-export function exportJSON(request: CompareRequest, result: CompareResult, filename = 'mintara-result.json'): void {
-  const payload = {
+export function exportJSON(
+  request: CompareRequest,
+  result: CompareResult,
+  filename = 'mintara-result.json',
+  aiSummary?: string,
+): void {
+  const payload: Record<string, unknown> = {
     exportedAt: new Date().toISOString(),
     request,
     result,
   }
+  if (aiSummary) payload.aiSummary = aiSummary
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
   triggerDownload(blob, filename)
 }
@@ -18,6 +24,7 @@ export async function exportExcel(
   result: CompareResult,
   diffNodes: DiffNode[],
   filename = 'mintara-diff.xlsx',
+  aiSummary?: string,
 ): Promise<void> {
   const workbook = new ExcelJS.Workbook()
 
@@ -120,6 +127,16 @@ export async function exportExcel(
     row.height = 60
   }
 
+  // ── Sheet 4: AI Summary (optional) ─────────────────────────────────────────
+  if (aiSummary) {
+    const summarySheet = workbook.addWorksheet('AI Summary')
+    summarySheet.columns = [{ key: 'summary', width: 100 }]
+    const cell = summarySheet.getCell('A1')
+    cell.value = aiSummary
+    cell.alignment = { wrapText: true, vertical: 'top' }
+    summarySheet.getRow(1).height = Math.max(60, aiSummary.split('\n').length * 15)
+  }
+
   const buffer = await workbook.xlsx.writeBuffer()
   const blob = new Blob([buffer], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -141,16 +158,30 @@ export async function exportPNG(
   }, 'image/png')
 }
 
-export function exportBulkJSON(bulkResults: BulkItemResult[], filename = 'mintara-bulk.json'): void {
-  const payload = {
+export function exportBulkJSON(
+  bulkResults: BulkItemResult[],
+  filename = 'mintara-bulk.json',
+  bulkItemSummaries?: Record<string, string>,
+  aggregateSummary?: string,
+): void {
+  const payload: Record<string, unknown> = {
     exportedAt: new Date().toISOString(),
-    results: bulkResults,
+    results: bulkResults.map((r) => ({
+      ...r,
+      ...(bulkItemSummaries?.[r.item.id] ? { aiSummary: bulkItemSummaries[r.item.id] } : {}),
+    })),
   }
+  if (aggregateSummary) payload.aggregateSummary = aggregateSummary
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
   triggerDownload(blob, filename)
 }
 
-export async function exportBulkExcel(bulkResults: BulkItemResult[], filename = 'mintara-bulk.xlsx'): Promise<void> {
+export async function exportBulkExcel(
+  bulkResults: BulkItemResult[],
+  filename = 'mintara-bulk.xlsx',
+  bulkItemSummaries?: Record<string, string>,
+  aggregateSummary?: string,
+): Promise<void> {
   const workbook = new ExcelJS.Workbook()
   const headerFill: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } }
 
@@ -169,6 +200,7 @@ export async function exportBulkExcel(bulkResults: BulkItemResult[], filename = 
       { header: `${name} Time`, key: `${name}_time`, width: 14 },
     ]),
     { header: 'Error', key: 'error', width: 40 },
+    ...(bulkItemSummaries ? [{ header: 'AI Summary', key: 'aiSummary', width: 60 }] : []),
   ]
 
   summarySheet.getRow(1).font = { bold: true }
@@ -188,6 +220,7 @@ export async function exportBulkExcel(bulkResults: BulkItemResult[], filename = 
       status: entry.status,
       matched: entry.result ? (entry.result.hasChanges ? 'Diffs' : 'Matched') : '-',
       error: entry.error ?? '',
+      ...(bulkItemSummaries ? { aiSummary: bulkItemSummaries[entry.item.id] ?? '' } : {}),
     }
     for (const target of entry.result?.targets ?? []) {
       rowData[`${target.name}_http`] = target.status
@@ -239,6 +272,16 @@ export async function exportBulkExcel(bulkResults: BulkItemResult[], filename = 
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: DIFF_FILL[node.status] ?? 'FFFFFFFF' } }
       })
     }
+  }
+
+  // ── Sheet 3: AI Aggregate Summary (optional) ───────────────────────────────
+  if (aggregateSummary) {
+    const aggSheet = workbook.addWorksheet('AI Aggregate Summary')
+    aggSheet.columns = [{ key: 'summary', width: 100 }]
+    const cell = aggSheet.getCell('A1')
+    cell.value = aggregateSummary
+    cell.alignment = { wrapText: true, vertical: 'top' }
+    aggSheet.getRow(1).height = Math.max(60, aggregateSummary.split('\n').length * 15)
   }
 
   const buffer = await workbook.xlsx.writeBuffer()

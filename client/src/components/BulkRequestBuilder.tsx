@@ -11,6 +11,7 @@ import { HeadersEditor } from './HeadersEditor'
 import { NormalizationEditor } from './NormalizationEditor'
 import { QueryParamsEditor } from './QueryParamsEditor'
 import { TargetList } from './TargetList'
+import { AuthHeaderManager } from './AuthHeaderManager'
 import type { HttpMethod, BulkRequestItem, NormalizationOptions } from '@mintara/shared'
 
 const DEFAULT_NORMALIZATION: NormalizationOptions = { ignoreFields: [], sortArrays: false }
@@ -545,6 +546,14 @@ export function BulkRequestBuilder() {
             onChange={setBulkSharedHeaders}
           />
         </div>
+      )}
+
+      {/* 2b. Authorization header manager (per-request mode only) */}
+      {usePerRequestHeaders && (
+        <AuthHeaderManager
+          items={bulkItems}
+          onUpdateItems={setBulkItems}
+        />
       )}
 
       {/* 3. Request rows */}

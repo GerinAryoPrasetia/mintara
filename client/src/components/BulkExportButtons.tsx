@@ -5,19 +5,31 @@ import { useStore } from '../store'
 import { exportBulkJSON, exportBulkExcel, exportPNG } from '../lib/export'
 
 export function BulkExportButtons() {
-  const { bulkResults, isBulkRunning } = useStore()
+  const { bulkResults, isBulkRunning, bulkItemSummaries, bulkAggregateSummary } = useStore()
   const [exporting, setExporting] = useState<string | null>(null)
 
   if (bulkResults.length === 0 || isBulkRunning) return null
 
+  const hasSummaries = Object.keys(bulkItemSummaries).length > 0
+
   const handleExportJSON = () => {
-    exportBulkJSON(bulkResults, 'mintara-bulk.json')
+    exportBulkJSON(
+      bulkResults,
+      'mintara-bulk.json',
+      hasSummaries ? bulkItemSummaries : undefined,
+      bulkAggregateSummary ?? undefined,
+    )
   }
 
   const handleExportExcel = async () => {
     setExporting('excel')
     try {
-      await exportBulkExcel(bulkResults, 'mintara-bulk.xlsx')
+      await exportBulkExcel(
+        bulkResults,
+        'mintara-bulk.xlsx',
+        hasSummaries ? bulkItemSummaries : undefined,
+        bulkAggregateSummary ?? undefined,
+      )
     } finally {
       setExporting(null)
     }

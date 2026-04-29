@@ -6,7 +6,7 @@ import { exportJSON, exportExcel, exportPNG } from '../lib/export'
 import { compare, normalize } from '@mintara/shared'
 
 export function ExportButtons() {
-  const { result, request } = useStore()
+  const { result, request, singleSummary } = useStore()
   const [exporting, setExporting] = useState<string | null>(null)
 
   if (!result) return null
@@ -15,7 +15,7 @@ export function ExportButtons() {
   const pathSlug = request.path.replace(/^\/+/, '').replace(/\//g, '-') || 'export'
 
   const handleExportJSON = () => {
-    exportJSON(request, result, `mintara-${pathSlug}.json`)
+    exportJSON(request, result, `mintara-${pathSlug}.json`, singleSummary ?? undefined)
   }
 
   const handleExportExcel = async () => {
@@ -26,7 +26,7 @@ export function ExportButtons() {
       const normA = normalize(a.body, request.normalization)
       const normB = normalize(b.body, request.normalization)
       const diffNodes = compare(normA, normB, '')
-      await exportExcel(request, result, diffNodes, `mintara-${pathSlug}.xlsx`)
+      await exportExcel(request, result, diffNodes, `mintara-${pathSlug}.xlsx`, singleSummary ?? undefined)
     } finally {
       setExporting(null)
     }

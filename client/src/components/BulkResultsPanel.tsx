@@ -1,6 +1,7 @@
 import React, { useState, memo } from 'react'
-import { RotateCcw, ArrowUp } from 'lucide-react'
+import { RotateCcw, ArrowUp, Sparkles } from 'lucide-react'
 import { Badge } from '../components_ui/ui/badge'
+import { Button } from '../components_ui/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components_ui/ui/tabs'
 import { useStore } from '../store'
 import { DiffViewer } from './DiffViewer'
@@ -116,13 +117,20 @@ const AccordionCard = memo(function AccordionCard({
   normalization,
   onRetry,
   retryDisabled,
+  summary,
+  summaryLoading,
+  onSummarize,
 }: {
   entry: BulkItemResult
   normalization: NormalizationOptions
   onRetry: (itemId: string) => void
   retryDisabled: boolean
+  summary: string | undefined
+  summaryLoading: boolean
+  onSummarize: (itemId: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
+  const [summaryExpanded, setSummaryExpanded] = useState(false)
 
   const { item, result, error, status } = entry
 
@@ -142,6 +150,12 @@ const AccordionCard = memo(function AccordionCard({
     }
     // pending
     return <Badge className="bg-slate-100 text-slate-500 text-xs">Pending</Badge>
+  }
+
+  const handleSummarize = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setSummaryExpanded(true)
+    onSummarize(item.id)
   }
 
   return (
@@ -175,6 +189,19 @@ const AccordionCard = memo(function AccordionCard({
 
         {/* Status badge */}
         <span className="shrink-0">{statusBadge()}</span>
+
+        {/* AI Summarize button */}
+        {status === 'done' && result && (
+          <button
+            type="button"
+            disabled={summaryLoading}
+            onClick={handleSummarize}
+            className="shrink-0 p-1 rounded text-slate-400 hover:text-purple-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            title="AI summarize this result"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+          </button>
+        )}
 
         {/* Jump to request button */}
         <button
@@ -224,7 +251,32 @@ const AccordionCard = memo(function AccordionCard({
             <p className="pt-3 text-sm text-slate-400 italic">Not yet started.</p>
           )}
           {status === 'done' && result && (
-            <ResponsePanelContent result={result} normalization={normalization} />
+            <>
+              {/* Per-item AI summary */}
+              {(summary || summaryLoading) && (
+                <div className="mt-3 border rounded-md bg-purple-50 border-purple-200">
+                  <button
+                    type="button"
+                    onClick={() => setSummaryExpanded((v) => !v)}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm font-medium text-purple-800"
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    AI Summary
+                    <span className="ml-auto text-xs text-purple-400">{summaryExpanded ? '▲' : '▼'}</span>
+                  </button>
+                  {summaryExpanded && (
+                    <div className="px-3 pb-3">
+                      {summaryLoading ? (
+                        <p className="text-sm text-purple-600 italic">Generating summary…</p>
+                      ) : (
+                        <p className="text-sm text-slate-700 whitespace-pre-wrap">{summary}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+              <ResponsePanelContent result={result} normalization={normalization} />
+            </>
           )}
         </div>
       )}
@@ -237,7 +289,17 @@ const AccordionCard = memo(function AccordionCard({
 // ---------------------------------------------------------------------------
 
 export function BulkResultsPanel() {
-  const { bulkResults, bulkProgress, isBulkRunning, request, retryBulkItem } = useStore()
+  const {
+    bulkResults,
+    bulkProgress,
+    isBulkRunning,
+    request,
+    retryBulkItem,
+    bulkItemSummaries,
+    bulkItemSummaryLoading,
+    generateBulkItemSummary,
+    generateAllBulkItemSummaries,
+  } = useStore()
 
   if (bulkResults.length === 0) return null
 
@@ -245,11 +307,15 @@ export function BulkResultsPanel() {
   const total = bulkProgress ? bulkProgress.total : bulkResults.length
   const matched = bulkResults.filter((r) => r.status === 'done' && r.result?.hasChanges === false).length
   const diffs = bulkResults.filter((r) => r.status === 'done' && r.result?.hasChanges === true).length
+  const allDone = !isBulkRunning && done === total
+  const isSummarizingAll = bulkResults
+    .filter((r) => r.status === 'done' && r.result)
+    .some((r) => bulkItemSummaryLoading[r.item.id])
 
   return (
     <div id="bulk-results-panel" className="space-y-3">
       {/* Summary bar */}
-      <div className="flex items-center gap-3 px-4 py-2 bg-white border rounded-lg text-sm text-slate-700">
+      <div className="flex items-center gap-3 px-4 py-2 bg-white border rounded-lg text-sm text-slate-700 flex-wrap">
         <span className="font-medium">
           {done} / {total} complete
         </span>
@@ -257,6 +323,21 @@ export function BulkResultsPanel() {
         <span className="text-green-700">{matched} matched</span>
         <span className="text-slate-300">|</span>
         <span className="text-yellow-700">{diffs} had diffs</span>
+        {allDone && (
+          <>
+            <span className="text-slate-300">|</span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={generateAllBulkItemSummaries}
+              disabled={isSummarizingAll}
+              className="h-6 text-xs px-2"
+            >
+              <Sparkles className="h-3 w-3 mr-1" />
+              {isSummarizingAll ? 'Summarizing…' : 'Summarize All'}
+            </Button>
+          </>
+        )}
       </div>
 
       {/* Accordion cards */}
@@ -268,6 +349,9 @@ export function BulkResultsPanel() {
             normalization={entry.item.normalization ?? request.normalization}
             onRetry={retryBulkItem}
             retryDisabled={isBulkRunning}
+            summary={bulkItemSummaries[entry.item.id]}
+            summaryLoading={bulkItemSummaryLoading[entry.item.id] ?? false}
+            onSummarize={generateBulkItemSummary}
           />
         ))}
       </div>
