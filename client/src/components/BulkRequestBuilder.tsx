@@ -4,7 +4,7 @@ import Editor from '@monaco-editor/react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components_ui/ui/select'
 import { Button } from '../components_ui/ui/button'
 import { Input } from '../components_ui/ui/input'
-import { Trash2, Plus, ChevronDown, ChevronUp, Upload, Download, Info, ArrowDown, Copy, Check } from 'lucide-react'
+import { Trash2, Plus, ChevronDown, ChevronUp, Upload, Download, Info, ArrowDown, Copy, Check, CopyPlus } from 'lucide-react'
 import { buildCurl } from '../lib/curl'
 import { useStore } from '../store'
 import { HeadersEditor } from './HeadersEditor'
@@ -150,6 +150,24 @@ export function BulkRequestBuilder() {
     setExpandedHeaders((s) => { const n = new Set(s); n.delete(id); return n })
     setExpandedNorm((s) => { const n = new Set(s); n.delete(id); return n })
     setEditorErrors((prev) => { const next = { ...prev }; delete next[id]; return next })
+  }
+
+  function duplicateItem(id: string) {
+    const idx = bulkItems.findIndex((i) => i.id === id)
+    if (idx === -1) return
+    const source = bulkItems[idx]
+    const clone: BulkRequestItem = {
+      ...source,
+      id: crypto.randomUUID(),
+      body: source.body !== undefined ? JSON.parse(JSON.stringify(source.body)) : undefined,
+      headers: { ...(source.headers ?? {}) },
+      normalization: source.normalization
+        ? { ...source.normalization, ignoreFields: [...(source.normalization.ignoreFields ?? [])] }
+        : undefined,
+    }
+    const next = [...bulkItems]
+    next.splice(idx + 1, 0, clone)
+    setBulkItems(next)
   }
 
   function addItem() {
@@ -401,6 +419,10 @@ export function BulkRequestBuilder() {
 
       setBulkItems(items)
 
+      // Auto-expand body panel for items that have a body imported
+      const withBody = new Set(items.filter((i) => i.body !== undefined).map((i) => i.id))
+      if (withBody.size > 0) setExpandedBody(withBody)
+
       if (!usePerRequestHeaders && firstRowHeaders) {
         setBulkSharedHeaders(firstRowHeaders)
       }
@@ -612,6 +634,13 @@ export function BulkRequestBuilder() {
                   {copiedItems[item.id]
                     ? <Check className="h-3.5 w-3.5 text-green-500" />
                     : <Copy className="h-3.5 w-3.5" />}
+                </button>
+                <button
+                  onClick={() => duplicateItem(item.id)}
+                  className="flex items-center shrink-0 px-1.5 py-1 rounded border bg-white hover:bg-slate-50 text-slate-400 hover:text-slate-700"
+                  title="Duplicate request"
+                >
+                  <CopyPlus className="h-3.5 w-3.5" />
                 </button>
                 <Button
                   variant="ghost"
