@@ -77,6 +77,7 @@ export function BulkRequestBuilder() {
     isBulkRunning,
     bulkResults,
     runBulk,
+    activeCaseName,
   } = useStore()
 
   // Sets of item IDs with expanded body / headers / normalization panels
@@ -121,6 +122,13 @@ export function BulkRequestBuilder() {
       setBulkItems([newItem()])
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-expand body panels when a saved case is loaded (e.g. from JSON collection import)
+  useEffect(() => {
+    if (activeCaseName === null) return
+    const withBody = new Set(bulkItems.filter((i) => i.body !== undefined).map((i) => i.id))
+    if (withBody.size > 0) setExpandedBody(withBody)
+  }, [activeCaseName]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── helpers ──────────────────────────────────────────────────────────────
 

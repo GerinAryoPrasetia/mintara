@@ -69,9 +69,11 @@ export function DiffViewer({ targetA, targetB, normalization }: DiffViewerProps)
       )}
 
       {/* Side-by-side full diff */}
-      {fullDiffTooLarge ? (
+      {fullDiffTooLarge || diffNodes.length > 20 ? (
         <div className="border rounded-lg px-4 py-3 text-xs text-slate-500 bg-slate-50">
-          Full diff hidden — response too large ({Math.round((aText.length + bText.length) / 1024)}KB combined). Use the table above for field-level differences.
+          {fullDiffTooLarge
+            ? `Full diff hidden — response too large (${Math.round((aText.length + bText.length) / 1024)}KB combined). Use the table above for field-level differences.`
+            : `Full diff hidden — ${diffNodes.length} differences found. Use the table above for field-level differences.`}
         </div>
       ) : (
         <div className="border rounded-lg overflow-auto text-xs">

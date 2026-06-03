@@ -25,55 +25,42 @@ compareRouter.post('/compare', async (req, res) => {
   const { method, path, targets, body: requestBody, normalization } = body as CompareRequest
   const timeoutMs = Number(process.env.REQUEST_TIMEOUT_MS ?? 10000)
 
-  // Fire all requests in parallel — never let one failure block the rest
-  const settled = await Promise.allSettled(
-    targets.map(async (target) => {
-      const fullUrl = target.baseUrl.replace(/\/$/, '') + (path.startsWith('/') ? path : `/${path}`)
-      const start = Date.now()
-      try {
-        console.log(`[${target.name}] ${method.toUpperCase()} ${fullUrl}`)
-        const response = await axios({
-          method: method.toLowerCase(),
-          url: fullUrl,
-          headers: target.headers ?? {},
-          data: requestBody,
-          timeout: timeoutMs,
-          validateStatus: () => true, // don't throw on 4xx/5xx
-        })
-        const responseTimeMs = Date.now() - start
-        return {
-          name: target.name,
-          url: fullUrl,
-          status: response.status,
-          responseTimeMs,
-          body: response.data,
-        } satisfies TargetResult
-      } catch (err) {
-        const responseTimeMs = Date.now() - start
-        return {
-          name: target.name,
-          url: fullUrl,
-          status: 0,
-          responseTimeMs,
-          body: null,
-          error: err instanceof Error ? err.message : String(err),
-        } satisfies TargetResult
-      }
-    }),
-  )
+  const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-  const targetResults: TargetResult[] = settled.map((result, i) => {
-    if (result.status === 'fulfilled') return result.value
-    // Promise.allSettled fulfilled branch catches all — rejected means programming error
-    return {
-      name: targets[i].name,
-      url: targets[i].baseUrl,
-      status: 0,
-      responseTimeMs: 0,
-      body: null,
-      error: 'Unexpected error',
+  // Fire requests sequentially to avoid overwhelming the DB connection pool
+  const targetResults: TargetResult[] = []
+  for (const target of targets) {
+    const fullUrl = target.baseUrl.replace(/\/$/, '') + (path.startsWith('/') ? path : `/${path}`)
+    const start = Date.now()
+    try {
+      console.log(`[${target.name}] ${method.toUpperCase()} ${fullUrl}`)
+      const response = await axios({
+        method: method.toLowerCase(),
+        url: fullUrl,
+        headers: target.headers ?? {},
+        data: requestBody,
+        timeout: timeoutMs,
+        validateStatus: () => true,
+      })
+      targetResults.push({
+        name: target.name,
+        url: fullUrl,
+        status: response.status,
+        responseTimeMs: Date.now() - start,
+        body: response.data,
+      } satisfies TargetResult)
+    } catch (err) {
+      targetResults.push({
+        name: target.name,
+        url: fullUrl,
+        status: 0,
+        responseTimeMs: Date.now() - start,
+        body: null,
+        error: err instanceof Error ? err.message : String(err),
+      } satisfies TargetResult)
     }
-  })
+    await delay(300)
+  }
 
   // Pre-check A vs B for hasChanges (normalized)
   const normA = normalize(targetResults[0].body, normalization)

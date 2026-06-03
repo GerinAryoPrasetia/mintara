@@ -105,7 +105,6 @@ export async function exportExcel(
     { header: 'Target', key: 'name', width: 20 },
     { header: 'URL', key: 'url', width: 45 },
     { header: 'Status', key: 'status', width: 10 },
-    { header: 'Response Time', key: 'responseTimeMs', width: 16 },
     { header: 'Error', key: 'error', width: 30 },
     { header: 'Body', key: 'body', width: 80 },
   ]
@@ -118,7 +117,6 @@ export async function exportExcel(
       name: target.name,
       url: target.url,
       status: target.status,
-      responseTimeMs: `${target.responseTimeMs}ms`,
       error: target.error ?? '',
       body: target.body !== null ? JSON.stringify(target.body, null, 2) : '',
     })
@@ -193,12 +191,10 @@ export async function exportBulkExcel(
   summarySheet.columns = [
     { header: 'Method', key: 'method', width: 10 },
     { header: 'Path', key: 'path', width: 45 },
+    { header: 'Body', key: 'body', width: 40 },
     { header: 'Status', key: 'status', width: 10 },
     { header: 'Matched?', key: 'matched', width: 12 },
-    ...targetNames.flatMap((name) => [
-      { header: `${name} HTTP`, key: `${name}_http`, width: 12 },
-      { header: `${name} Time`, key: `${name}_time`, width: 14 },
-    ]),
+    ...targetNames.map((name) => ({ header: `${name} HTTP`, key: `${name}_http`, width: 12 })),
     { header: 'Error', key: 'error', width: 40 },
     ...(bulkItemSummaries ? [{ header: 'AI Summary', key: 'aiSummary', width: 60 }] : []),
   ]
@@ -217,6 +213,7 @@ export async function exportBulkExcel(
     const rowData: Record<string, string | number> = {
       method: entry.item.method,
       path: entry.item.path,
+      body: entry.item.body ? JSON.stringify(entry.item.body) : '',
       status: entry.status,
       matched: entry.result ? (entry.result.hasChanges ? 'Diffs' : 'Matched') : '-',
       error: entry.error ?? '',
@@ -224,7 +221,6 @@ export async function exportBulkExcel(
     }
     for (const target of entry.result?.targets ?? []) {
       rowData[`${target.name}_http`] = target.status
-      rowData[`${target.name}_time`] = `${target.responseTimeMs}ms`
     }
     const row = summarySheet.addRow(rowData)
     const fillColor = entry.result?.hasChanges ? 'FFFEF08A' : STATUS_FILL[entry.status] ?? 'FFFFFFFF'
