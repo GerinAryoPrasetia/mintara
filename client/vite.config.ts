@@ -14,6 +14,7 @@ export default defineConfig({
     extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
   },
   server: {
+    port: 5174,
     proxy: {
       '/api': {
         target: `http://localhost:${process.env.PORT ?? 3001}`,

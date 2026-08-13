@@ -1,6 +1,7 @@
 import ExcelJS from 'exceljs'
+import JSZip from 'jszip'
 import html2canvas from 'html2canvas'
-import type { CompareRequest, CompareResult, DiffNode, BulkItemResult } from '@mintara/shared'
+import type { CompareRequest, CompareResult, DiffNode, BulkItemResult, BulkRequestItem } from '@mintara/shared'
 import { compare, normalize } from '@mintara/shared'
 
 export function exportJSON(
@@ -156,22 +157,36 @@ export async function exportPNG(
   }, 'image/png')
 }
 
-export function exportBulkJSON(
+export async function exportBulkJSON(
   bulkResults: BulkItemResult[],
-  filename = 'mintara-bulk.json',
+  filename = 'mintara-bulk.zip',
   bulkItemSummaries?: Record<string, string>,
   aggregateSummary?: string,
-): void {
-  const payload: Record<string, unknown> = {
-    exportedAt: new Date().toISOString(),
-    results: bulkResults.map((r) => ({
+): Promise<void> {
+  const zip = new JSZip()
+  const exportedAt = new Date().toISOString()
+
+  bulkResults.forEach((r, i) => {
+    const payload = {
+      exportedAt,
       ...r,
       ...(bulkItemSummaries?.[r.item.id] ? { aiSummary: bulkItemSummaries[r.item.id] } : {}),
-    })),
+    }
+    zip.file(bulkItemFilename(r.item, i), JSON.stringify(payload, null, 2))
+  })
+
+  if (aggregateSummary) {
+    zip.file('_aggregate-summary.json', JSON.stringify({ exportedAt, aggregateSummary }, null, 2))
   }
-  if (aggregateSummary) payload.aggregateSummary = aggregateSummary
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+
+  const blob = await zip.generateAsync({ type: 'blob' })
   triggerDownload(blob, filename)
+}
+
+function bulkItemFilename(item: BulkRequestItem, index: number): string {
+  const slug = item.path.replace(/^\/+/, '').replace(/[^a-zA-Z0-9-_]+/g, '-').replace(/^-+|-+$/g, '')
+  const order = String(index + 1).padStart(3, '0')
+  return `${order}-${item.method}-${slug || 'root'}.json`
 }
 
 export async function exportBulkExcel(

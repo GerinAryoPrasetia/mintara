@@ -13,13 +13,18 @@ export function BulkExportButtons() {
   const hasSummaries = Object.keys(bulkItemSummaries).length > 0
   const baseName = (activeCaseName ?? 'mintara-bulk').replace(/[^a-zA-Z0-9-_]/g, '-')
 
-  const handleExportJSON = () => {
-    exportBulkJSON(
-      bulkResults,
-      `${baseName}.json`,
-      hasSummaries ? bulkItemSummaries : undefined,
-      bulkAggregateSummary ?? undefined,
-    )
+  const handleExportJSON = async () => {
+    setExporting('json')
+    try {
+      await exportBulkJSON(
+        bulkResults,
+        `${baseName}.zip`,
+        hasSummaries ? bulkItemSummaries : undefined,
+        bulkAggregateSummary ?? undefined,
+      )
+    } finally {
+      setExporting(null)
+    }
   }
 
   const handleExportExcel = async () => {
@@ -47,9 +52,9 @@ export function BulkExportButtons() {
 
   return (
     <div className="flex gap-2 flex-wrap">
-      <Button variant="outline" size="sm" onClick={handleExportJSON}>
+      <Button variant="outline" size="sm" onClick={handleExportJSON} disabled={exporting === 'json'}>
         <Download className="h-4 w-4 mr-1" />
-        Export JSON
+        {exporting === 'json' ? 'Zipping…' : 'Export JSON'}
       </Button>
       <Button
         variant="outline"

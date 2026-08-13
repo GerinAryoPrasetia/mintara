@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react'
+import JSZip from 'jszip'
 import { Save, FolderOpen, Trash2, Download, Upload } from 'lucide-react'
 import { Button } from '../components_ui/ui/button'
 import { Input } from '../components_ui/ui/input'
@@ -24,6 +25,7 @@ export function TestCaseManager() {
   // Selection / export state
   const [isSelecting, setIsSelecting] = useState(false)
   const [selectedNames, setSelectedNames] = useState<Set<string>>(new Set())
+  const [isExporting, setIsExporting] = useState(false)
 
   // Import state
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -72,25 +74,48 @@ export function TestCaseManager() {
   }
 
   // --- Export ---
-  const handleExport = () => {
+  const handleExport = async () => {
     const toExport = savedCases.filter((c) => selectedNames.has(c.name))
-    const payload: SavedCasesExport = {
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      cases: toExport,
+    const exportedAt = new Date().toISOString()
+
+    if (toExport.length === 1) {
+      const payload: SavedCasesExport = { version: 1, exportedAt, cases: toExport }
+      const filename = `${toExport[0].name.replace(/[^a-zA-Z0-9-_]/g, '-')}.json`
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      a.click()
+      URL.revokeObjectURL(url)
+      exitSelecting()
+      return
     }
-    const filename =
-      toExport.length === 1
-        ? `${toExport[0].name.replace(/[^a-zA-Z0-9-_]/g, '-')}.json`
-        : 'mintara-test-cases.json'
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    a.click()
-    URL.revokeObjectURL(url)
-    exitSelecting()
+
+    setIsExporting(true)
+    try {
+      const zip = new JSZip()
+      const usedNames = new Set<string>()
+      toExport.forEach((c) => {
+        const payload: SavedCasesExport = { version: 1, exportedAt, cases: [c] }
+        const base = c.name.replace(/[^a-zA-Z0-9-_]/g, '-') || 'case'
+        let slug = base
+        let suffix = 2
+        while (usedNames.has(slug)) slug = `${base}-${suffix++}`
+        usedNames.add(slug)
+        zip.file(`${slug}.json`, JSON.stringify(payload, null, 2))
+      })
+      const blob = await zip.generateAsync({ type: 'blob' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'mintara-test-cases.zip'
+      a.click()
+      URL.revokeObjectURL(url)
+    } finally {
+      setIsExporting(false)
+      exitSelecting()
+    }
   }
 
   // --- Import ---
@@ -102,10 +127,55 @@ export function TestCaseManager() {
     setResolutions({})
   }
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const applyIncomingCases = (incoming: SavedCase[]) => {
+    if (incoming.length === 0) {
+      setImportError('No test cases found in file')
+      return
+    }
+    const conflicting = incoming.filter((c) => savedCases.some((e) => e.name === c.name))
+    if (conflicting.length === 0) {
+      importCases(incoming, {})
+      setImportSummary(`Imported ${incoming.length} case${incoming.length !== 1 ? 's' : ''}`)
+    } else {
+      setPendingImport(incoming)
+      setConflicts(conflicting)
+      const defaultRes: Record<string, 'overwrite' | 'skip'> = {}
+      conflicting.forEach((c) => { defaultRes[c.name] = 'skip' })
+      setResolutions(defaultRes)
+    }
+  }
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     resetImportState()
+
+    if (file.name.toLowerCase().endsWith('.zip')) {
+      try {
+        const zip = await JSZip.loadAsync(await file.arrayBuffer())
+        const entries = Object.values(zip.files).filter(
+          (f) => !f.dir && f.name.toLowerCase().endsWith('.json'),
+        )
+        const incoming: SavedCase[] = []
+        for (const entry of entries) {
+          try {
+            const parsed = JSON.parse(await entry.async('string'))
+            if (parsed.version === 1 && Array.isArray(parsed.cases)) incoming.push(...parsed.cases)
+          } catch {
+            // skip unreadable entries in the zip
+          }
+        }
+        if (incoming.length === 0) {
+          setImportError('Invalid format — no valid Mintara export files found in zip')
+        } else {
+          applyIncomingCases(incoming)
+        }
+      } catch {
+        setImportError('Invalid file — could not read zip')
+      }
+      e.target.value = ''
+      return
+    }
 
     const reader = new FileReader()
     reader.onload = (ev) => {
@@ -115,22 +185,7 @@ export function TestCaseManager() {
           setImportError('Invalid format — not a Mintara export file')
           return
         }
-        const incoming: SavedCase[] = parsed.cases
-        if (incoming.length === 0) {
-          setImportError('No test cases found in file')
-          return
-        }
-        const conflicting = incoming.filter((c) => savedCases.some((e) => e.name === c.name))
-        if (conflicting.length === 0) {
-          importCases(incoming, {})
-          setImportSummary(`Imported ${incoming.length} case${incoming.length !== 1 ? 's' : ''}`)
-        } else {
-          setPendingImport(incoming)
-          setConflicts(conflicting)
-          const defaultRes: Record<string, 'overwrite' | 'skip'> = {}
-          conflicting.forEach((c) => { defaultRes[c.name] = 'skip' })
-          setResolutions(defaultRes)
-        }
+        applyIncomingCases(parsed.cases)
       } catch {
         setImportError('Invalid file — could not parse JSON')
       }
@@ -341,7 +396,7 @@ export function TestCaseManager() {
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".json"
+                    accept=".json,.zip"
                     className="hidden"
                     onChange={handleFileChange}
                   />
@@ -379,11 +434,11 @@ export function TestCaseManager() {
                     </Button>
                     <Button
                       size="sm"
-                      disabled={selectedNames.size === 0}
+                      disabled={selectedNames.size === 0 || isExporting}
                       onClick={handleExport}
                     >
                       <Download className="h-4 w-4 mr-1" />
-                      Export Selected ({selectedNames.size})
+                      {isExporting ? 'Zipping…' : `Export Selected (${selectedNames.size})`}
                     </Button>
                   </div>
                 )}
