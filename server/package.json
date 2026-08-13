@@ -1,8 +1,14 @@
 {
-  "name": "mintara",
+  "name": "@gerinaryo/mintara",
   "version": "1.0.0",
   "description": "Web-based API response comparison tool for migration validation",
-  "keywords": ["API", "comparison", "diff", "migration", "testing"],
+  "keywords": [
+    "API",
+    "comparison",
+    "diff",
+    "migration",
+    "testing"
+  ],
   "homepage": "https://github.com/GerinAryoPrasetia/mintara#readme",
   "bugs": {
     "url": "https://github.com/GerinAryoPrasetia/mintara/issues"
@@ -15,7 +21,7 @@
   "author": "Gerin Aryo",
   "type": "module",
   "bin": {
-    "mintara": "./bin/mintara.js"
+    "mintara": "bin/mintara.js"
   },
   "files": [
     "bin",
