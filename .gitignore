@@ -7,4 +7,5 @@ coverage/
 docs/
 .worktrees/
 server/public/
+server/README.md
 *.tgz

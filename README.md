@@ -19,7 +19,16 @@ A lightweight web-based tool for validating API response parity during migration
 - 💾 **Test Case Management** — Save, load, and reuse test configurations
 - 🔌 **No CORS Issues** — Built-in proxy server for API calls
 
-## Quick Start
+## Install
+
+```bash
+npm install -g @gerinaryo/mintara
+mintara
+```
+
+That starts a single server serving both the app and its API on one port (`http://localhost:3001` by default, override with `PORT=...`).
+
+## Run from source
 
 ```bash
 # Clone and navigate to the project
@@ -32,8 +41,8 @@ npm install
 npm start
 ```
 
-The app will be available at:
-- **Frontend:** http://localhost:5173
+In this mode the client (with hot reload) and the API run on separate ports:
+- **Frontend:** http://localhost:5174
 - **Backend API:** http://localhost:3001
 
 ## Environment Variables
@@ -64,7 +73,6 @@ Available variables:
 
 - **Ignore Fields:** Enter dot-notation paths to exclude (e.g., `user.updatedAt`, `meta.timestamp`)
 - **Sort Arrays:** Enable to compare arrays regardless of element order
-- **Float Tolerance:** Set delta threshold (e.g., `0.01` treats `1.001` and `1.002` as equal)
 
 ### Test Cases
 
@@ -83,17 +91,25 @@ Available variables:
 
 ## Architecture
 
+Two independent product domains — API Diff Checker and File Diff Checker — each with their own folder on the client and server, plus a shared pure-logic package:
+
 ```
 mintara/
-├── shared/          # Pure TypeScript logic
+├── shared/          # Pure TypeScript logic (no runtime deps)
 │   ├── types.ts     # Shared interfaces
-│   ├── normalize.ts # Field ignoring, array sorting, float tolerance
+│   ├── normalize.ts # Field ignoring, array sorting
 │   └── compare.ts   # Deep diff engine
-├── server/          # Express API proxy
-│   └── src/routes/compare.ts  # POST /api/compare
+├── server/          # Express API — the package published to npm
+│   └── src/domains/
+│       ├── api-diff/    # POST /api/compare, POST /api/summarize
+│       └── file-diff/   # POST /api/files/find
 └── client/          # Vite + React SPA
-    └── src/components/       # UI components
+    └── src/domains/
+        ├── api-diff/    # Request builder, diff viewer, test cases
+        └── file-diff/   # Text diff checker, file finder
 ```
+
+See [CONTEXT.md](CONTEXT.md) for the domain vocabulary.
 
 ### Tech Stack
 
@@ -123,16 +139,15 @@ Execute parallel API requests and compare responses.
 ```json
 {
   "method": "GET",
-  "headers": { "Authorization": "Bearer token" },
+  "path": "/users/123",
   "body": { "user_id": 123 },
   "targets": [
-    { "name": "PHP 5", "url": "https://old-api.com/users/123" },
-    { "name": "PHP 8", "url": "https://new-api.com/users/123" }
+    { "name": "PHP 5", "baseUrl": "https://old-api.com", "headers": { "Authorization": "Bearer token" } },
+    { "name": "PHP 8", "baseUrl": "https://new-api.com", "headers": { "Authorization": "Bearer token" } }
   ],
   "normalization": {
     "ignoreFields": ["updated_at", "request_id"],
-    "sortArrays": true,
-    "floatTolerance": 0.01
+    "sortArrays": true
   }
 }
 ```
@@ -172,14 +187,15 @@ npm install
 npm start
 ```
 
-### Build for Production
+### Build the CLI package
+
+A `Makefile` wraps the commands used to build and publish the npm CLI package (`server/`, which bundles the built client alongside it):
 
 ```bash
-# Build client
-npm run build --workspace=client
-
-# Start production server
-NODE_ENV=production npm start --workspace=server
+make build    # build client + bundle server into server/dist, server/public
+make pack     # build, then produce a local tarball (server/*.tgz) without publishing
+make publish  # build, then npm publish (requires npm login; add OTP=123456 if 2FA prompts)
+make clean    # remove build artifacts
 ```
 
 ### Workspace Scripts

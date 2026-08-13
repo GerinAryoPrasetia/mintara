@@ -22,8 +22,8 @@ build: ## Build the publishable mintara CLI package (client build + server bundl
 pack: build ## Build and produce a local tarball (server/mintara-*.tgz) without publishing
 	cd server && npm pack
 
-publish: build ## Publish the mintara CLI package to npm (requires npm login; pass OTP=123456 if 2FA is required)
-	cd server && npm publish --access=public $(if $(OTP),--otp=$(OTP))
+publish: build ## Publish the mintara CLI package to npm (requires npm login)
+	cd server && npm publish --access=public
 
 clean: ## Remove build artifacts
 	rm -rf server/dist server/public client/dist server/*.tgz
