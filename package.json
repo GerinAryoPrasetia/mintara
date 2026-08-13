@@ -1,6 +1,7 @@
 {
-  "name": "@gerinaryo/mintara",
-  "version": "1.0.1",
+  "name": "mintara-monorepo",
+  "version": "1.0.0",
+  "private": true,
   "description": "Web Based Local API Tool Comparison",
   "keywords": [
     "API",
