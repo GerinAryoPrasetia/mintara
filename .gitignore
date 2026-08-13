@@ -6,3 +6,5 @@ coverage/
 .claude/
 docs/
 .worktrees/
+server/public/
+*.tgz
