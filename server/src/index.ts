@@ -7,9 +7,9 @@ config({ path: resolve(__dirname, '../../.env') })
 
 import express from 'express'
 import cors from 'cors'
-import { compareRouter } from './routes/compare.js'
-import { summarizeRouter } from './routes/summarize.js'
-import { filesRouter } from './routes/files.js'
+import { apiDiffRouter } from './domains/api-diff/routes.js'
+import { summarizeRouter } from './domains/api-diff/summarizeRoutes.js'
+import { fileDiffRouter } from './domains/file-diff/routes.js'
 
 export const app = express()
 
@@ -21,9 +21,9 @@ app.use((req, _res, next) => {
   next()
 })
 
-app.use('/api', compareRouter)
+app.use('/api', apiDiffRouter)
 app.use('/api', summarizeRouter)
-app.use('/api', filesRouter)
+app.use('/api', fileDiffRouter)
 
 const PORT = process.env.PORT ?? '3001'
 

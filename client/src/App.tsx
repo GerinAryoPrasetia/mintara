@@ -1,21 +1,21 @@
 import React, { useState } from 'react'
-import { RequestBuilder } from './components/RequestBuilder'
-import { ResponsePanel } from './components/ResponsePanel'
-import { ExportButtons } from './components/ExportButtons'
+import { RequestBuilder } from './domains/api-diff/components/RequestBuilder'
+import { ResponsePanel } from './domains/api-diff/components/ResponsePanel'
+import { ExportButtons } from './domains/api-diff/components/ExportButtons'
 import { Sidebar } from './components/Sidebar'
-import { TestCaseSidebar } from './components/TestCaseSidebar'
-import { FileFinder } from './components/FileFinder'
-import { DiffChecker } from './components/DiffChecker'
-import { BulkRequestBuilder } from './components/BulkRequestBuilder'
-import { BulkProgressBar } from './components/BulkProgressBar'
-import { BulkResultsPanel } from './components/BulkResultsPanel'
-import { BulkExportButtons } from './components/BulkExportButtons'
-import { useStore } from './store'
+import { TestCaseSidebar } from './domains/api-diff/components/TestCaseSidebar'
+import { FileFinder } from './domains/file-diff/components/FileFinder'
+import { DiffChecker } from './domains/file-diff/components/DiffChecker'
+import { BulkRequestBuilder } from './domains/api-diff/components/BulkRequestBuilder'
+import { BulkProgressBar } from './domains/api-diff/components/BulkProgressBar'
+import { BulkResultsPanel } from './domains/api-diff/components/BulkResultsPanel'
+import { BulkExportButtons } from './domains/api-diff/components/BulkExportButtons'
+import { useApiDiffStore } from './domains/api-diff/store'
 
 type AppPage = 'testcases' | 'diffchecker'
 
 export default function App() {
-  const { result, error, mode, setMode, isBulkRunning, bulkResults } = useStore()
+  const { result, error, mode, setMode, isBulkRunning, bulkResults } = useApiDiffStore()
   const [activePage, setActivePage] = useState<AppPage>('testcases')
 
   return (
