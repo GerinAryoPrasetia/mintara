@@ -50,3 +50,32 @@ export interface BulkItemResult {
   error: string | null
   status: 'pending' | 'running' | 'done' | 'error'
 }
+
+export interface FileFindRequest {
+  originalRoot: string
+  modifiedRoot: string
+  filenames: string[]
+}
+
+export interface FileMatch {
+  relativePath: string   // relative to the root it was found under, POSIX separators
+  content: string        // capped at the server's per-file byte limit
+  sizeBytes: number       // actual on-disk size, even when content was truncated
+  truncated: boolean
+}
+
+export interface FileFindEntry {
+  filename: string              // echoes the requested name
+  originalMatches: FileMatch[]  // [] = not found under originalRoot
+  modifiedMatches: FileMatch[]  // [] = not found under modifiedRoot
+}
+
+export interface RootScanWarning {
+  root: 'original' | 'modified'
+  message: string
+}
+
+export interface FileFindResponse {
+  entries: FileFindEntry[]
+  warnings: RootScanWarning[]
+}

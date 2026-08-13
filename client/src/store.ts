@@ -56,6 +56,12 @@ interface AppStore {
   generateAllBulkItemSummaries: () => Promise<void>
   generateBulkAggregateSummary: () => Promise<void>
 
+  // Diff Checker text (session-only — shared between DiffChecker and FileFinder)
+  diffOriginalText: string
+  setDiffOriginalText: (text: string) => void
+  diffModifiedText: string
+  setDiffModifiedText: (text: string) => void
+
   // Mode
   mode: 'single' | 'bulk'
   setMode: (mode: 'single' | 'bulk') => void
@@ -357,6 +363,12 @@ export const useStore = create<AppStore>()(
           return { savedCases: result }
         })
       },
+
+      // Diff Checker text
+      diffOriginalText: '',
+      setDiffOriginalText: (text) => set({ diffOriginalText: text }),
+      diffModifiedText: '',
+      setDiffModifiedText: (text) => set({ diffModifiedText: text }),
 
       // Mode
       mode: 'single',
