@@ -6,7 +6,9 @@ import { summarizeSingle, summarizeBulkItem, summarizeBulkAggregate } from './su
 import { diffTargets } from './diff'
 import { buildBulkCompareRequest } from './bulkRequest'
 import * as testCases from './testCases'
-import type { SavedCase, WorkingCase } from './testCases'
+import type { SavedCase, ExportedCase, WorkingCase } from './testCases'
+import * as caseResults from './caseResults'
+import type { CaseResults, CaseResultsCache } from './caseResults'
 
 interface AppStore {
   // Current request configuration
@@ -25,11 +27,29 @@ interface AppStore {
   saveCase: (name: string) => void
   loadCase: (name: string) => void
   deleteCase: (name: string) => void
-  importCases: (incoming: SavedCase[], resolutions: Record<string, 'overwrite' | 'skip'>) => void
+  importCases: (incoming: ExportedCase[], resolutions: Record<string, 'overwrite' | 'skip'>) => void
   switchCase: (name: string) => void
   newCase: () => void
   duplicateCase: (name: string) => void
+  /** Returns an error message, or null when the rename succeeded. */
+  renameCase: (oldName: string, newName: string) => string | null
   saveCurrentCase: (name?: string) => void
+  /**
+   * Only `savedCases` + `activeCaseName` survive a reload — the working state
+   * does not. Without this, the sidebar would show a case as active while the
+   * working state sat empty, and the next auto-save would overwrite that case
+   * with the empty state. Called on rehydration to put the two back in sync.
+   */
+  rehydrateActiveCase: () => void
+
+  /**
+   * Results held per case name so switching cases shows that case's own run.
+   * Session-only — deliberately outside `partialize` (response bodies would
+   * blow the localStorage quota).
+   */
+  caseResults: CaseResultsCache
+  /** The results to export for a case: live state if it's active, else the cache. */
+  resultsForCase: (name: string) => CaseResults
 
   // AI summaries (session-only)
   singleSummary: string | null
@@ -66,7 +86,7 @@ interface AppStore {
   retryBulkItem: (itemId: string) => Promise<void>
 }
 
-const DEFAULT_REQUEST: CompareRequest = {
+export const DEFAULT_REQUEST: CompareRequest = {
   method: 'GET',
   path: '',
   body: undefined,
@@ -78,6 +98,25 @@ const DEFAULT_REQUEST: CompareRequest = {
     ignoreFields: [],
     sortArrays: false,
   },
+}
+
+function liveResults(state: AppStore): CaseResults {
+  return {
+    result: state.result,
+    bulkResults: state.bulkResults,
+    singleSummary: state.singleSummary,
+    bulkItemSummaries: state.bulkItemSummaries,
+    bulkAggregateSummary: state.bulkAggregateSummary,
+  }
+}
+
+/**
+ * Saving under a different name moves the on-screen results to that name, so
+ * park a copy under the case we're leaving rather than losing its results.
+ */
+function stashOnRename(state: AppStore, nextActiveName: string | null): CaseResultsCache {
+  if (state.activeCaseName === null || state.activeCaseName === nextActiveName) return state.caseResults
+  return caseResults.stashResults(state.caseResults, state.activeCaseName, liveResults(state))
 }
 
 function currentWorking(state: AppStore): WorkingCase {
@@ -102,6 +141,7 @@ export const useApiDiffStore = create<AppStore>()(
       error: null,
       savedCases: [],
       activeCaseName: null,
+      caseResults: {},
 
       setRequest: (patch) =>
         set((state) => ({ request: { ...state.request, ...patch } })),
@@ -209,27 +249,46 @@ export const useApiDiffStore = create<AppStore>()(
       saveCase: (name) => {
         const state = get()
         const { cases, activeCaseName } = testCases.saveCase(state.savedCases, name, currentWorking(state))
-        set({ savedCases: cases, activeCaseName })
+        set({ savedCases: cases, activeCaseName, caseResults: stashOnRename(state, activeCaseName) })
       },
 
       loadCase: (name) => {
-        const loaded = testCases.loadCase(get().savedCases, name)
+        const state = get()
+        const loaded = testCases.loadCase(state.savedCases, name)
         if (!loaded) return
-        set({ ...loaded, result: null, activeCaseName: name })
+        const cache = caseResults.stashResults(state.caseResults, state.activeCaseName, liveResults(state))
+        set({
+          ...loaded,
+          activeCaseName: name,
+          caseResults: cache,
+          ...caseResults.restoreResults(cache, name),
+        })
       },
 
       deleteCase: (name) => {
         const state = get()
-        set(testCases.deleteCase(state.savedCases, state.activeCaseName, name))
+        const { cases, activeCaseName } = testCases.deleteCase(state.savedCases, state.activeCaseName, name)
+        set({
+          savedCases: cases,
+          activeCaseName,
+          caseResults: caseResults.dropResults(state.caseResults, name),
+        })
       },
 
       switchCase: (name) => {
         const state = get()
         const result = testCases.switchCase(state.savedCases, state.activeCaseName, currentWorking(state), name)
+        if (!result.toLoad) {
+          set({ savedCases: result.cases, activeCaseName: result.activeCaseName })
+          return
+        }
+        const cache = caseResults.stashResults(state.caseResults, state.activeCaseName, liveResults(state))
         set({
           savedCases: result.cases,
           activeCaseName: result.activeCaseName,
-          ...(result.toLoad ? { ...result.toLoad, result: null } : {}),
+          caseResults: cache,
+          ...result.toLoad,
+          ...caseResults.restoreResults(cache, name),
         })
       },
 
@@ -239,26 +298,76 @@ export const useApiDiffStore = create<AppStore>()(
         set({
           savedCases: result.cases,
           activeCaseName: result.activeCaseName,
+          caseResults: caseResults.stashResults(state.caseResults, state.activeCaseName, liveResults(state)),
           request: { ...DEFAULT_REQUEST },
           mode: 'single',
           bulkItems: [],
           bulkSharedHeaders: {},
           usePerRequestHeaders: false,
-          result: null,
+          ...caseResults.EMPTY_CASE_RESULTS,
         })
       },
 
       duplicateCase: (name) => {
-        set((state) => ({ savedCases: testCases.duplicateCase(state.savedCases, name) }))
+        set((state) => {
+          const cases = testCases.duplicateCase(state.savedCases, name)
+          const copy = cases.find((c) => !state.savedCases.includes(c))
+          return {
+            savedCases: cases,
+            caseResults: copy ? caseResults.copyResults(state.caseResults, name, copy.name) : state.caseResults,
+          }
+        })
+      },
+
+      renameCase: (oldName, newName) => {
+        const state = get()
+        const res = testCases.renameCase(state.savedCases, state.activeCaseName, oldName, newName)
+        if (!res.ok) return res.error
+        const renamed = res.cases.find((c) => !state.savedCases.includes(c))
+        set({
+          savedCases: res.cases,
+          activeCaseName: res.activeCaseName,
+          caseResults: renamed ? caseResults.moveResults(state.caseResults, oldName, renamed.name) : state.caseResults,
+        })
+        return null
+      },
+
+      rehydrateActiveCase: () => {
+        const state = get()
+        if (state.activeCaseName === null) return
+        const loaded = testCases.loadCase(state.savedCases, state.activeCaseName)
+        // Active case no longer exists (deleted in another tab): drop the pointer
+        // rather than leave it aimed at nothing.
+        if (!loaded) {
+          set({ activeCaseName: null })
+          return
+        }
+        set({ ...loaded, ...caseResults.EMPTY_CASE_RESULTS })
       },
 
       saveCurrentCase: (name) => {
         const state = get()
-        set(testCases.saveCurrentCase(state.savedCases, state.activeCaseName, currentWorking(state), name))
+        const saved = testCases.saveCurrentCase(state.savedCases, state.activeCaseName, currentWorking(state), name)
+        set({ ...saved, caseResults: stashOnRename(state, saved.activeCaseName) })
       },
 
       importCases: (incoming, resolutions) => {
-        set((state) => ({ savedCases: testCases.importCases(state.savedCases, incoming, resolutions) }))
+        set((state) => {
+          const split = testCases.splitImported(incoming)
+          const savedCases = testCases.importCases(state.savedCases, split.cases, resolutions)
+          // Only keep results for cases that actually landed — a 'skip' resolution
+          // leaves the existing case in place, so its old results stay too.
+          const accepted = Object.fromEntries(
+            Object.entries(split.results).filter(([name]) => savedCases.some((c) => c.name === name) && resolutions[name] !== 'skip'),
+          )
+          return { savedCases, caseResults: { ...state.caseResults, ...accepted } }
+        })
+      },
+
+      resultsForCase: (name) => {
+        const state = get()
+        if (state.activeCaseName === name) return liveResults(state)
+        return caseResults.restoreResults(state.caseResults, name)
       },
 
       // Mode
@@ -376,6 +485,7 @@ export const useApiDiffStore = create<AppStore>()(
       name: 'mintara-storage',
       // Only persist savedCases — request and result are session-only
       partialize: (state) => ({ savedCases: state.savedCases, activeCaseName: state.activeCaseName }),
+      onRehydrateStorage: () => (state) => state?.rehydrateActiveCase(),
     },
   ),
 )

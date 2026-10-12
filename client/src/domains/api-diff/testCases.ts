@@ -1,4 +1,6 @@
 import type { CompareRequest, BulkRequestItem } from '@mintara/shared'
+import { hasResults } from './caseResults'
+import type { CaseResults, CaseResultsCache } from './caseResults'
 
 /** A named, persisted Test Case — see CONTEXT.md. */
 export interface SavedCase {
@@ -11,10 +13,42 @@ export interface SavedCase {
   usePerRequestHeaders?: boolean
 }
 
+/**
+ * A case as it appears in an export file: the saved config plus, when the
+ * case has actually been run, the results that run produced. `results` is
+ * export-only — it is never written back into the persisted `SavedCase[]`.
+ */
+export interface ExportedCase extends SavedCase {
+  results?: CaseResults
+}
+
+/** Accepted on import: version 1 files carry no `results`, version 2 may. */
+export type SavedCasesExportVersion = 1 | 2
+
+export const EXPORT_VERSION = 2
+
 export interface SavedCasesExport {
-  version: 1
+  version: SavedCasesExportVersion
   exportedAt: string
+  cases: ExportedCase[]
+}
+
+export function toExportedCase(saved: SavedCase, results: CaseResults): ExportedCase {
+  return hasResults(results) ? { ...saved, results } : saved
+}
+
+/** Peel `results` off imported cases so only config reaches persisted storage. */
+export function splitImported(incoming: ExportedCase[]): {
   cases: SavedCase[]
+  results: CaseResultsCache
+} {
+  const cases: SavedCase[] = []
+  const results: CaseResultsCache = {}
+  for (const { results: caseResults, ...saved } of incoming) {
+    cases.push(saved)
+    if (caseResults && hasResults(caseResults)) results[saved.name] = caseResults
+  }
+  return { cases, results }
 }
 
 /** Whatever's currently on screen, saved or not — see CONTEXT.md. */
@@ -181,4 +215,72 @@ export function importCases(
     // 'skip' or no resolution entry → leave existing untouched
   }
   return result
+}
+
+/** One endpoint inside a case that matched a search; `itemId` is set for bulk items. */
+export interface EndpointMatch {
+  itemId?: string
+  method: string
+  path: string
+}
+
+export interface CaseSearchHit {
+  case: SavedCase
+  nameMatch: boolean
+  endpoints: EndpointMatch[]
+}
+
+/**
+ * Global search across every saved case: a case is a hit when its name
+ * matches, or when any of its endpoints (the single request, or each bulk
+ * item) matches by path or by "METHOD path". Only matching endpoints are
+ * returned. A blank query returns every case with no endpoint list.
+ */
+export function searchCases(cases: SavedCase[], query: string): CaseSearchHit[] {
+  const q = query.trim().toLowerCase()
+  if (!q) return cases.map((c) => ({ case: c, nameMatch: false, endpoints: [] }))
+
+  const matches = (method: string, path: string) =>
+    path.toLowerCase().includes(q) || `${method} ${path}`.toLowerCase().includes(q)
+
+  const hits: CaseSearchHit[] = []
+  for (const c of cases) {
+    const nameMatch = c.name.toLowerCase().includes(q)
+    const endpoints: EndpointMatch[] =
+      c.mode === 'bulk'
+        ? (c.bulkItems ?? [])
+            .filter((item) => matches(item.method, item.path))
+            .map((item) => ({ itemId: item.id, method: item.method, path: item.path }))
+        : matches(c.config.method, c.config.path)
+          ? [{ method: c.config.method, path: c.config.path }]
+          : []
+    if (nameMatch || endpoints.length > 0) hits.push({ case: c, nameMatch, endpoints })
+  }
+  return hits
+}
+
+export type RenameResult =
+  | { ok: true; cases: SavedCase[]; activeCaseName: string | null }
+  | { ok: false; error: string }
+
+/**
+ * Rename a saved case in place (list order and config untouched). The new
+ * name is trimmed; empty names and names already used by another case are
+ * rejected. Renaming the active case moves the active pointer with it.
+ */
+export function renameCase(
+  cases: SavedCase[],
+  activeCaseName: string | null,
+  oldName: string,
+  newName: string,
+): RenameResult {
+  const trimmed = newName.trim()
+  if (!trimmed) return { ok: false, error: 'Name cannot be empty' }
+  const idx = cases.findIndex((c) => c.name === oldName)
+  if (idx === -1) return { ok: false, error: `Case "${oldName}" not found` }
+  if (trimmed === oldName) return { ok: true, cases, activeCaseName }
+  if (cases.some((c) => c.name === trimmed)) return { ok: false, error: `A case named "${trimmed}" already exists` }
+  const next = [...cases]
+  next[idx] = { ...cases[idx], name: trimmed }
+  return { ok: true, cases: next, activeCaseName: activeCaseName === oldName ? trimmed : activeCaseName }
 }

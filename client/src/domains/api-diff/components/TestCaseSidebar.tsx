@@ -1,17 +1,86 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useMemo } from 'react'
 import JSZip from 'jszip'
-import { ChevronLeft, ChevronRight, Copy, Trash2, Download, Upload, Save } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Copy, Trash2, Download, Upload, Save, Plus, Search, X, Pencil } from 'lucide-react'
 import { Button } from '../../../components_ui/ui/button'
 import { Input } from '../../../components_ui/ui/input'
 import { Checkbox } from '../../../components_ui/ui/checkbox'
 import { Separator } from '../../../components_ui/ui/separator'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../../../components_ui/ui/dialog'
 import { useApiDiffStore } from '../store'
-import type { SavedCase, SavedCasesExport } from '../testCases'
+import { EXPORT_VERSION, toExportedCase, searchCases } from '../testCases'
+import type { SavedCase, ExportedCase, SavedCasesExport, EndpointMatch } from '../testCases'
+
+/** Version 1 files carry config only; version 2 may also carry each case's results. */
+function isSupportedExport(parsed: unknown): parsed is SavedCasesExport {
+  if (typeof parsed !== 'object' || parsed === null) return false
+  const { version, cases } = parsed as { version?: unknown; cases?: unknown }
+  return (version === 1 || version === 2) && Array.isArray(cases)
+}
+
+const WIDTH_KEY = 'mintara.testCaseSidebarWidth'
+const MIN_WIDTH = 224
+const MAX_WIDTH = 640
+const DEFAULT_WIDTH = 224
 
 export function TestCaseSidebar() {
-  const { savedCases, activeCaseName, switchCase, duplicateCase, deleteCase, saveCurrentCase } = useApiDiffStore()
+  const { savedCases, activeCaseName, switchCase, duplicateCase, deleteCase, saveCurrentCase, resultsForCase, newCase, renameCase } =
+    useApiDiffStore()
   const [collapsed, setCollapsed] = useState(false)
+  const [width, setWidth] = useState(() => {
+    const saved = Number(localStorage.getItem(WIDTH_KEY))
+    return saved >= MIN_WIDTH && saved <= MAX_WIDTH ? saved : DEFAULT_WIDTH
+  })
+
+  function startResize(e: React.MouseEvent) {
+    e.preventDefault()
+    const startX = e.clientX
+    const startWidth = width
+    let latest = startWidth
+    const onMove = (ev: MouseEvent) => {
+      // sidebar sits on the right edge, so dragging left grows it
+      latest = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startWidth + (startX - ev.clientX)))
+      setWidth(latest)
+    }
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      document.body.style.userSelect = ''
+      localStorage.setItem(WIDTH_KEY, String(latest))
+    }
+    document.body.style.userSelect = 'none'
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
+
+  // Global search over case names and every case's endpoints
+  const [query, setQuery] = useState('')
+  const hits = useMemo(() => searchCases(savedCases, query), [savedCases, query])
+  const isSearching = query.trim() !== ''
+
+  // Inline rename state
+  const [renamingName, setRenamingName] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const [renameError, setRenameError] = useState<string | null>(null)
+
+  const startRename = (e: React.MouseEvent, name: string) => {
+    e.stopPropagation()
+    setRenamingName(name)
+    setRenameValue(name)
+    setRenameError(null)
+  }
+  const cancelRename = () => {
+    setRenamingName(null)
+    setRenameError(null)
+  }
+  const commitRename = () => {
+    if (renamingName === null) return
+    const error = renameCase(renamingName, renameValue)
+    if (error) {
+      setRenameError(error)
+      return
+    }
+    cancelRename()
+  }
 
   // Save dialog state
   const [saveOpen, setSaveOpen] = useState(false)
@@ -21,8 +90,8 @@ export function TestCaseSidebar() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [importError, setImportError] = useState<string | null>(null)
   const [importSummary, setImportSummary] = useState<string | null>(null)
-  const [pendingImport, setPendingImport] = useState<SavedCase[]>([])
-  const [conflicts, setConflicts] = useState<SavedCase[]>([])
+  const [pendingImport, setPendingImport] = useState<ExportedCase[]>([])
+  const [conflicts, setConflicts] = useState<ExportedCase[]>([])
   const [resolutions, setResolutions] = useState<Record<string, 'overwrite' | 'skip'>>({})
 
   // Export/selection state
@@ -49,6 +118,27 @@ export function TestCaseSidebar() {
 
   const handleSwitch = (name: string) => {
     switchCase(name)
+  }
+
+  // Switch to the case, then scroll to the matching bulk item once it renders.
+  const handleEndpointClick = (e: React.MouseEvent, caseName: string, endpoint: EndpointMatch) => {
+    e.stopPropagation()
+    if (caseName !== activeCaseName) switchCase(caseName)
+    if (!endpoint.itemId) return
+    const targetId = `request-item-${endpoint.itemId}`
+    let attempts = 0
+    const tryJump = () => {
+      const el = document.getElementById(targetId)
+      if (!el) {
+        if (attempts++ < 10) setTimeout(tryJump, 50)
+        return
+      }
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      el.classList.remove('jump-highlight')
+      void el.offsetWidth // force reflow to restart animation
+      el.classList.add('jump-highlight')
+    }
+    tryJump()
   }
 
   const handleDuplicate = (e: React.MouseEvent, name: string) => {
@@ -82,11 +172,15 @@ export function TestCaseSidebar() {
 
   // --- Export ---
   const handleExport = async () => {
-    const toExport = savedCases.filter((c) => selectedNames.has(c.name))
+    // Results live in the session cache (or on screen, for the active case) —
+    // they ride along in the export file even though they're never persisted.
+    const toExport = savedCases
+      .filter((c) => selectedNames.has(c.name))
+      .map((c) => toExportedCase(c, resultsForCase(c.name)))
     const exportedAt = new Date().toISOString()
 
     if (toExport.length === 1) {
-      const payload: SavedCasesExport = { version: 1, exportedAt, cases: toExport }
+      const payload: SavedCasesExport = { version: EXPORT_VERSION, exportedAt, cases: toExport }
       const filename = `${toExport[0].name.replace(/[^a-zA-Z0-9-_]/g, '-')}.json`
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
@@ -104,7 +198,7 @@ export function TestCaseSidebar() {
       const zip = new JSZip()
       const usedNames = new Set<string>()
       toExport.forEach((c) => {
-        const payload: SavedCasesExport = { version: 1, exportedAt, cases: [c] }
+        const payload: SavedCasesExport = { version: EXPORT_VERSION, exportedAt, cases: [c] }
         const base = c.name.replace(/[^a-zA-Z0-9-_]/g, '-') || 'case'
         let slug = base
         let suffix = 2
@@ -134,7 +228,7 @@ export function TestCaseSidebar() {
     setResolutions({})
   }
 
-  const applyIncomingCases = (incoming: SavedCase[]) => {
+  const applyIncomingCases = (incoming: ExportedCase[]) => {
     if (incoming.length === 0) { setImportError('No test cases found in file'); return }
     const conflicting = incoming.filter((c) => savedCases.some((e) => e.name === c.name))
     if (conflicting.length === 0) {
@@ -160,11 +254,11 @@ export function TestCaseSidebar() {
         const entries = Object.values(zip.files).filter(
           (f) => !f.dir && f.name.toLowerCase().endsWith('.json'),
         )
-        const incoming: SavedCase[] = []
+        const incoming: ExportedCase[] = []
         for (const entry of entries) {
           try {
             const parsed = JSON.parse(await entry.async('string'))
-            if (parsed.version === 1 && Array.isArray(parsed.cases)) incoming.push(...parsed.cases)
+            if (isSupportedExport(parsed)) incoming.push(...parsed.cases)
           } catch {
             // skip unreadable entries in the zip
           }
@@ -185,7 +279,7 @@ export function TestCaseSidebar() {
     reader.onload = (ev) => {
       try {
         const parsed = JSON.parse(ev.target?.result as string)
-        if (parsed.version !== 1 || !Array.isArray(parsed.cases)) {
+        if (!isSupportedExport(parsed)) {
           setImportError('Invalid format — not a Mintara export file')
           return
         }
@@ -243,14 +337,57 @@ export function TestCaseSidebar() {
   const isConflictView = conflicts.length > 0
 
   return (
-    <div className="flex flex-col bg-white border-l border-slate-200 w-56 shrink-0 h-full overflow-hidden">
+    <div
+      className="relative flex flex-col bg-white border-l border-slate-200 shrink-0 h-full overflow-hidden"
+      style={{ width }}
+    >
+      <div
+        onMouseDown={startResize}
+        onDoubleClick={() => { setWidth(DEFAULT_WIDTH); localStorage.setItem(WIDTH_KEY, String(DEFAULT_WIDTH)) }}
+        className="absolute left-0 top-0 h-full w-1.5 cursor-col-resize z-10 hover:bg-blue-300/60"
+        title="Drag to resize (double-click to reset)"
+      />
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-3 border-b border-slate-100 shrink-0">
         <span className="text-sm font-semibold text-slate-700">Test Cases</span>
-        <button onClick={() => setCollapsed(true)} className="p-1.5 rounded hover:bg-slate-100" title="Collapse test cases">
-          <ChevronRight className="h-4 w-4 text-slate-500" />
-        </button>
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={() => { exitSelecting(); newCase() }}
+            className="p-1.5 rounded hover:bg-slate-100"
+            title="New test case"
+          >
+            <Plus className="h-4 w-4 text-slate-500" />
+          </button>
+          <button onClick={() => setCollapsed(true)} className="p-1.5 rounded hover:bg-slate-100" title="Collapse test cases">
+            <ChevronRight className="h-4 w-4 text-slate-500" />
+          </button>
+        </div>
       </div>
+
+      {/* Global search */}
+      {!isConflictView && savedCases.length > 0 && (
+        <div className="px-3 py-2 border-b border-slate-100 shrink-0">
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === 'Escape' && setQuery('')}
+              placeholder="Search cases or endpoints"
+              className="h-7 pl-7 pr-7 text-xs"
+            />
+            {isSearching && (
+              <button
+                onClick={() => setQuery('')}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-slate-100"
+                title="Clear search"
+              >
+                <X className="h-3 w-3 text-slate-400" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Conflict resolution view */}
       {isConflictView ? (
@@ -284,11 +421,13 @@ export function TestCaseSidebar() {
             )}
             {savedCases.length === 0 ? (
               <p className="text-xs text-slate-400 text-center py-6">No saved test cases.</p>
+            ) : hits.length === 0 ? (
+              <p className="text-xs text-slate-400 text-center py-6">No cases or endpoints match.</p>
             ) : (
-              savedCases.map((tc) => (
+              hits.map(({ case: tc, endpoints }) => (
                 <div key={tc.name}>
                   <div
-                    onClick={() => !isSelecting && handleSwitch(tc.name)}
+                    onClick={() => !isSelecting && renamingName !== tc.name && handleSwitch(tc.name)}
                     className={`flex items-center px-3 py-2 cursor-pointer group transition-colors ${
                       tc.name === activeCaseName ? 'bg-slate-800' : 'hover:bg-slate-50'
                     }`}
@@ -307,18 +446,46 @@ export function TestCaseSidebar() {
                         <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
                           tc.name === activeCaseName ? 'bg-slate-600 text-white' : 'bg-slate-100 text-slate-600'
                         }`}>{tc.mode === 'bulk' ? 'Bulk' : 'Single'}</span>
-                        <span className={`text-sm font-medium truncate ${
-                          tc.name === activeCaseName ? 'text-white' : 'text-slate-800'
-                        }`}>{tc.name}</span>
+                        {renamingName === tc.name ? (
+                          <Input
+                            value={renameValue}
+                            onChange={(e) => { setRenameValue(e.target.value); setRenameError(null) }}
+                            onClick={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') commitRename()
+                              else if (e.key === 'Escape') cancelRename()
+                            }}
+                            onBlur={commitRename}
+                            autoFocus
+                            onFocus={(e) => e.target.select()}
+                            className="h-6 px-1.5 text-sm text-slate-800 bg-white min-w-0"
+                          />
+                        ) : (
+                          <span
+                            onDoubleClick={(e) => !isSelecting && startRename(e, tc.name)}
+                            className={`text-sm font-medium truncate ${
+                              tc.name === activeCaseName ? 'text-white' : 'text-slate-800'
+                            }`}
+                          >{tc.name}</span>
+                        )}
                       </div>
                       <p className={`text-xs truncate ${
                         tc.name === activeCaseName ? 'text-slate-300' : 'text-slate-400'
                       }`}>{caseHint(tc)}</p>
                     </div>
-                    {!isSelecting && (
+                    {!isSelecting && renamingName !== tc.name && (
                       <div className={`flex gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 ${
                         tc.name === activeCaseName ? 'opacity-100' : ''
                       }`}>
+                        <button
+                          onClick={(e) => startRename(e, tc.name)}
+                          className={`p-1 rounded hover:bg-slate-200 ${
+                            tc.name === activeCaseName ? 'text-slate-300 hover:text-white' : 'text-slate-400'
+                          }`}
+                          title="Rename"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
                         <button
                           onClick={(e) => handleDuplicate(e, tc.name)}
                           className={`p-1 rounded hover:bg-slate-200 ${
@@ -340,6 +507,25 @@ export function TestCaseSidebar() {
                       </div>
                     )}
                   </div>
+                  {renamingName === tc.name && renameError && (
+                    <p className="text-xs text-red-500 px-3 py-1">{renameError}</p>
+                  )}
+                  {isSearching && endpoints.length > 0 && (
+                    <div className="pb-1">
+                      {endpoints.map((ep, i) => (
+                        <button
+                          key={ep.itemId ?? i}
+                          onClick={(e) => handleEndpointClick(e, tc.name, ep)}
+                          disabled={isSelecting}
+                          className="w-full flex items-center gap-1.5 pl-6 pr-3 py-1 text-left hover:bg-slate-50 disabled:pointer-events-none"
+                          title={`${ep.method} ${ep.path || '/'}`}
+                        >
+                          <span className="text-[10px] font-mono font-semibold text-slate-500 shrink-0">{ep.method}</span>
+                          <span className="text-xs font-mono text-slate-600 truncate">{ep.path || '/'}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <Separator />
                 </div>
               ))

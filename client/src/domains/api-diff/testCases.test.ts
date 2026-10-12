@@ -10,9 +10,22 @@ import {
   importCases,
   toSavedCase,
   fromSavedCase,
+  toExportedCase,
+  splitImported,
+  searchCases,
+  renameCase,
 } from './testCases'
 import type { SavedCase, WorkingCase } from './testCases'
-import type { CompareRequest } from '@mintara/shared'
+import { EMPTY_CASE_RESULTS } from './caseResults'
+import type { CompareRequest, CompareResult } from '@mintara/shared'
+
+const compareResult: CompareResult = {
+  hasChanges: true,
+  targets: [
+    { name: 'PHP 5', url: 'https://old.example.com/users', status: 200, responseTimeMs: 10, body: { id: 1 } },
+    { name: 'PHP 8', url: 'https://new.example.com/users', status: 200, responseTimeMs: 12, body: { id: 2 } },
+  ],
+}
 
 const request: CompareRequest = {
   method: 'GET',
@@ -253,5 +266,152 @@ describe('importCases', () => {
     const incoming: SavedCase[] = [{ name: 'a', mode: 'single', config: { ...request, path: '/new' } }]
     expect(importCases(existing, incoming, { a: 'skip' })[0].config.path).toBe('/old')
     expect(importCases(existing, incoming, {})[0].config.path).toBe('/old')
+  })
+})
+
+describe('toExportedCase', () => {
+  const saved: SavedCase = { name: 'a', mode: 'single', config: request }
+
+  it('attaches results when the case has been run', () => {
+    const results = { ...EMPTY_CASE_RESULTS, singleSummary: 'one diff', result: compareResult }
+    expect(toExportedCase(saved, results)).toEqual({ ...saved, results })
+  })
+
+  it('omits results when the case has never been run', () => {
+    expect(toExportedCase(saved, EMPTY_CASE_RESULTS)).toEqual(saved)
+  })
+})
+
+describe('splitImported', () => {
+  it('separates results from the saved case config', () => {
+    const results = { ...EMPTY_CASE_RESULTS, result: compareResult }
+    const split = splitImported([{ name: 'a', mode: 'single', config: request, results }])
+    expect(split.cases).toEqual([{ name: 'a', mode: 'single', config: request }])
+    expect(split.results).toEqual({ a: results })
+  })
+
+  it('keeps version-1 cases (no results) importable', () => {
+    const split = splitImported([{ name: 'a', mode: 'single', config: request }])
+    expect(split.cases).toEqual([{ name: 'a', mode: 'single', config: request }])
+    expect(split.results).toEqual({})
+  })
+
+  it('preserves bulk-specific fields', () => {
+    const bulk: SavedCase = {
+      name: 'b',
+      mode: 'bulk',
+      config: request,
+      bulkItems: [{ id: '1', method: 'GET', path: '/a' }],
+      bulkSharedHeaders: { Authorization: 'Bearer x' },
+      usePerRequestHeaders: true,
+    }
+    expect(splitImported([{ ...bulk, results: EMPTY_CASE_RESULTS }]).cases).toEqual([bulk])
+  })
+})
+
+describe('searchCases', () => {
+  const single = (name: string, method: CompareRequest['method'], path: string): SavedCase => ({
+    name,
+    mode: 'single',
+    config: { ...request, method, path },
+  })
+  const bulk = (name: string, items: Array<[string, CompareRequest['method'], string]>): SavedCase => ({
+    name,
+    mode: 'bulk',
+    config: request,
+    bulkItems: items.map(([id, method, path]) => ({ id, method, path })),
+  })
+  const cases: SavedCase[] = [
+    single('Login flow', 'POST', '/auth/login'),
+    single('User list', 'GET', '/users'),
+    bulk('Orders regression', [
+      ['o1', 'GET', '/orders'],
+      ['o2', 'POST', '/orders/create'],
+      ['o3', 'GET', '/users/1/orders'],
+    ]),
+  ]
+
+  it('returns every case unfiltered for a blank query', () => {
+    const hits = searchCases(cases, '   ')
+    expect(hits.map((h) => h.case.name)).toEqual(['Login flow', 'User list', 'Orders regression'])
+    expect(hits.every((h) => h.endpoints.length === 0)).toBe(true)
+  })
+
+  it('matches case names case-insensitively', () => {
+    const hits = searchCases(cases, 'LOGIN')
+    expect(hits.map((h) => h.case.name)).toEqual(['Login flow'])
+    expect(hits[0].nameMatch).toBe(true)
+  })
+
+  it('matches endpoint paths across every case, single and bulk', () => {
+    const hits = searchCases(cases, '/users')
+    expect(hits.map((h) => h.case.name)).toEqual(['User list', 'Orders regression'])
+    expect(hits[0].nameMatch).toBe(false)
+    expect(hits[0].endpoints).toEqual([{ method: 'GET', path: '/users' }])
+    expect(hits[1].endpoints).toEqual([{ itemId: 'o3', method: 'GET', path: '/users/1/orders' }])
+  })
+
+  it('matches "METHOD path" combined', () => {
+    const hits = searchCases(cases, 'post /orders')
+    expect(hits).toHaveLength(1)
+    expect(hits[0].endpoints).toEqual([{ itemId: 'o2', method: 'POST', path: '/orders/create' }])
+  })
+
+  it('lists only the matching endpoints of a case', () => {
+    const hits = searchCases(cases, 'orders')
+    expect(hits).toHaveLength(1)
+    expect(hits[0].nameMatch).toBe(true)
+    expect(hits[0].endpoints.map((e) => e.itemId)).toEqual(['o1', 'o2', 'o3'])
+  })
+
+  it('returns nothing when no name or endpoint matches', () => {
+    expect(searchCases(cases, 'nope')).toEqual([])
+  })
+})
+
+describe('renameCase', () => {
+  const a: SavedCase = { name: 'a', mode: 'single', config: request }
+  const b: SavedCase = { name: 'b', mode: 'single', config: { ...request, path: '/b' } }
+  const c: SavedCase = { name: 'c', mode: 'single', config: request }
+
+  it('renames in place, keeping list order and config', () => {
+    const res = renameCase([a, b, c], null, 'b', 'beta')
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.cases.map((x) => x.name)).toEqual(['a', 'beta', 'c'])
+    expect(res.cases[1].config.path).toBe('/b')
+  })
+
+  it('moves the active pointer when the active case is renamed', () => {
+    const res = renameCase([a, b], 'b', 'b', 'beta')
+    expect(res.ok && res.activeCaseName).toBe('beta')
+  })
+
+  it('leaves the active pointer alone when another case is renamed', () => {
+    const res = renameCase([a, b], 'a', 'b', 'beta')
+    expect(res.ok && res.activeCaseName).toBe('a')
+  })
+
+  it('trims the new name', () => {
+    const res = renameCase([a], null, 'a', '  alpha  ')
+    expect(res.ok && res.cases[0].name).toBe('alpha')
+  })
+
+  it('rejects an empty name', () => {
+    expect(renameCase([a], null, 'a', '   ')).toEqual({ ok: false, error: 'Name cannot be empty' })
+  })
+
+  it('rejects a name another case already uses', () => {
+    expect(renameCase([a, b], null, 'a', 'b')).toEqual({ ok: false, error: 'A case named "b" already exists' })
+  })
+
+  it('treats renaming to the same name as a no-op success', () => {
+    const cases = [a, b]
+    const res = renameCase(cases, 'a', 'a', 'a')
+    expect(res).toEqual({ ok: true, cases, activeCaseName: 'a' })
+  })
+
+  it('rejects renaming a case that does not exist', () => {
+    expect(renameCase([a], null, 'zzz', 'x')).toEqual({ ok: false, error: 'Case "zzz" not found' })
   })
 })
