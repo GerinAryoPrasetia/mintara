@@ -24,6 +24,8 @@ import { createMockStore } from './domains/mock-webhook/mockStore.js'
 import { createRequestLog } from './domains/mock-webhook/requestLog.js'
 import { createHookRouter } from './domains/mock-webhook/hookRoutes.js'
 import { createMockAdminRouter } from './domains/mock-webhook/routes.js'
+import { createCaseInbox } from './domains/case-inbox/caseInbox.js'
+import { createCaseInboxRouter } from './domains/case-inbox/routes.js'
 import { homedir } from 'os'
 
 const PORT = process.env.PORT ?? '3001'
@@ -50,6 +52,9 @@ app.use((req, _res, next) => {
 
 // Before express.json(), so the mock receiver captures the raw body itself
 app.use('/hook', createHookRouter({ store: mockStore, log: mockLog }))
+
+// Before express.json() too: pushed fixture exports can exceed its 100kb default
+app.use('/api/cases', createCaseInboxRouter({ inbox: createCaseInbox() }))
 
 app.use(express.json())
 

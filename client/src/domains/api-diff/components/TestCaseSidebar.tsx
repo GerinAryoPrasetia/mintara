@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { useApiDiffStore } from '../store'
 import { EXPORT_VERSION, toExportedCase, searchCases } from '../testCases'
 import type { SavedCase, ExportedCase, SavedCasesExport, EndpointMatch } from '../testCases'
+import { useCaseInbox } from '../caseInbox'
 
 /** Version 1 files carry config only; version 2 may also carry each case's results. */
 function isSupportedExport(parsed: unknown): parsed is SavedCasesExport {
@@ -242,6 +243,14 @@ export function TestCaseSidebar() {
       setResolutions(defaultRes)
     }
   }
+
+  // Exports pushed to POST /api/cases/inbox (e.g. by the fixture builder) go
+  // through the same import + conflict flow as a dropped file
+  useCaseInbox((entry) => {
+    resetImportState()
+    applyIncomingCases(entry.export.cases)
+    if (entry.source) setImportSummary((s) => (s ? `${s} from ${entry.source}` : s))
+  }, pendingImport.length > 0)
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
