@@ -95,3 +95,73 @@ export interface FileFindResponse {
   entries: FileFindEntry[]
   warnings: RootScanWarning[]
 }
+
+// ── Mock Webhook ────────────────────────────────────────────────────────────
+
+export type MockMethod = HttpMethod | 'PATCH' | 'HEAD' | 'OPTIONS' | 'ANY'
+
+export interface MockResponse {
+  status: number
+  headers: Record<string, string>
+  body: string          // raw text; may contain {{placeholders}}
+  delayMs?: number
+}
+
+export interface MockRule {
+  id: string
+  method: MockMethod
+  path: string          // sub-path after the slug: exact ('/burn') or glob ('/voucher/*')
+  response: MockResponse
+}
+
+export interface MockSlug {
+  slug: string
+  rules: MockRule[]     // first match wins
+  defaultResponse: MockResponse
+  createdAt: string
+  updatedAt: string
+}
+
+export type MockMatchKind = 'rule' | 'default' | 'unknown-slug'
+
+export interface RecordedRequest {
+  id: string
+  slug: string
+  timestamp: string
+  method: string
+  path: string          // full original path incl. query, e.g. /hook/voucher/burn?x=1
+  subPath: string       // part after the slug, e.g. /burn
+  query: Record<string, string | string[]>
+  headers: Record<string, string | string[]>
+  rawBody: string
+  jsonBody: unknown | null
+  ip: string
+  response: MockResponse & { matched: MockMatchKind; ruleId?: string }
+}
+
+/** One mock as it travels in an export file — no server timestamps. */
+export interface ExportedMock {
+  slug: string
+  rules: MockRule[]
+  defaultResponse: MockResponse
+}
+
+export interface MocksExport {
+  kind: 'mintara-mocks'
+  version: 1
+  exportedAt: string
+  mocks: ExportedMock[]
+}
+
+export interface MockImportRequest {
+  mocks: ExportedMock[]
+  // keyed by slug; only consulted for slugs that already exist (default: skip)
+  resolutions: Record<string, 'overwrite' | 'skip'>
+}
+
+export interface MockImportResult {
+  created: string[]
+  overwritten: string[]
+  skipped: string[]
+  errors: { slug: string; error: string }[]
+}

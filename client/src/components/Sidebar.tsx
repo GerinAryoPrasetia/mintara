@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
-import { ChevronLeft, ChevronRight, ListChecks, Columns } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ListChecks, Columns, Webhook } from 'lucide-react'
 
-type AppPage = 'testcases' | 'diffchecker'
+type AppPage = 'testcases' | 'diffchecker' | 'mockwebhook'
 
 interface SidebarProps {
   activePage: AppPage
@@ -11,6 +11,7 @@ interface SidebarProps {
 const NAV_ITEMS: { page: AppPage; label: string; icon: typeof ListChecks }[] = [
   { page: 'testcases', label: 'API Diff Checker', icon: ListChecks },
   { page: 'diffchecker', label: 'Text Diff Checker', icon: Columns },
+  { page: 'mockwebhook', label: 'Mock Webhook', icon: Webhook },
 ]
 
 export function Sidebar({ activePage, onNavigate }: SidebarProps) {

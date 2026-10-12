@@ -11,8 +11,10 @@ import { BulkProgressBar } from "./domains/api-diff/components/BulkProgressBar";
 import { BulkResultsPanel } from "./domains/api-diff/components/BulkResultsPanel";
 import { BulkExportButtons } from "./domains/api-diff/components/BulkExportButtons";
 import { useApiDiffStore } from "./domains/api-diff/store";
+import { MockWebhookPage } from "./domains/mock-webhook/components/MockWebhookPage";
+import { MockSlugList } from "./domains/mock-webhook/components/MockSlugList";
 
-type AppPage = "testcases" | "diffchecker";
+type AppPage = "testcases" | "diffchecker" | "mockwebhook";
 
 export default function App() {
   const { result, error, mode, setMode, isBulkRunning, bulkResults } =
@@ -22,7 +24,7 @@ export default function App() {
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50">
       <Sidebar activePage={activePage} onNavigate={setActivePage} />
-      <main className="flex flex-col flex-1 overflow-y-auto px-4 py-6 space-y-4 max-w-7xl">
+      <main className="flex flex-col flex-1 overflow-y-auto px-4 py-6 space-y-4 min-w-0">
         {activePage === "testcases" ? (
           <>
             {/* Page header */}
@@ -96,6 +98,8 @@ export default function App() {
               </div>
             )}
           </>
+        ) : activePage === "mockwebhook" ? (
+          <MockWebhookPage />
         ) : (
           <>
             {/* Text Diff Checker page */}
@@ -112,6 +116,7 @@ export default function App() {
       </main>
       {activePage === "testcases" && <TestCaseSidebar />}
       {activePage === "diffchecker" && <FileFinder />}
+      {activePage === "mockwebhook" && <MockSlugList />}
     </div>
   );
 }

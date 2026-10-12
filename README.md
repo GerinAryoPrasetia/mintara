@@ -18,6 +18,7 @@ A lightweight web-based tool for validating API response parity during migration
 - 📤 **Export Formats** — JSON, Excel (colored cells), PNG screenshots
 - 💾 **Test Case Management** — Save, load, and reuse test configurations
 - 🔌 **No CORS Issues** — Built-in proxy server for API calls
+- 🪝 **Mock Webhook** — Local webhook.site replacement: configurable mock endpoints plus a live request log
 
 ## Install
 
@@ -59,6 +60,7 @@ Available variables:
 |----------|---------|-------------|
 | `PORT` | `3001` | Express server port |
 | `REQUEST_TIMEOUT_MS` | `10000` | Outbound request timeout (ms) |
+| `MINTARA_DATA_DIR` | `~/.mintara` | Where mock definitions (`mocks.json`) are stored |
 
 ## Usage
 
@@ -89,9 +91,76 @@ Available variables:
 | **Excel** | Flattened diff table with colored cells (yellow=changed, green=added, red=removed) |
 | **PNG** | Screenshot of the diff panel for sharing |
 
+### Mock Webhook
+
+A local stand-in for webhook.site, for when the code under test calls a third-party API (voucher burn, voucher validate, billing, …). The **server** serves the mocks on its own port, so Docker containers can reach them.
+
+1. Open **Mock Webhook** in the left menu.
+2. Type a slug (lowercase letters, digits, `-`, `_`) and press **+**, or **Import** a mock file (see below).
+3. Paste the endpoint URL into the caller's config. From the `php5` / `php8-new` containers, use the `host.docker.internal` form:
+
+   ```php
+   // config/params_local.php
+   'platformUrl' => [
+       'platformVoucherUrl' => 'http://host.docker.internal:3001/hook/voucher',
+   ],
+   ```
+
+   From the host itself, use `http://localhost:3001/hook/voucher`.
+4. Edit the rules, then click **Save**. Each rule has a method (or `ANY`), a sub-path, a status, headers, a body and an optional delay.
+   - The sub-path is the part after `/hook/<slug>`. It's either exact (`/burn`) or a glob, where `*` matches anything, `/` included (`/voucher/*`).
+   - Rules are checked top to bottom and the first match wins. Anything unmatched gets the slug's default response.
+   - A slug that doesn't exist gets `404 {"error":"unknown mock slug"}`, and the call is still logged.
+5. Calls show up live in the request log. Each entry shows the headers, the query, the body (pretty-printed when it's JSON) and the exact response that was sent, and has a **Copy as cURL** button.
+
+**Body placeholders**, filled from the incoming request:
+
+| Placeholder | Fills in |
+|-------------|----------|
+| `{{body.voucherCodes.0}}` | a value from the JSON body (dot path, array indexes allowed) |
+| `{{query.branchCode}}` | a query-string parameter |
+| `{{headers.x-request-id}}` | a request header (case-insensitive) |
+| `{{uuid}}` / `{{now}}` / `{{timestamp}}` | a random UUID / ISO time / epoch ms |
+
+Strings are inserted as-is, with no JSON escaping. Other values are JSON-encoded. A path that doesn't resolve becomes an empty string.
+
+**Import / Export** works the same way as for test cases.
+- **Export:** select one or more mocks, then click **Export (n)**. One mock downloads as a `.json` file; several download as a `.zip` with one `.json` per mock.
+- **Import:** accepts a `.json` or `.zip` file. If a slug already exists, you choose **Overwrite** or **Skip** for it. A file can be a mintara export, a bare array of mocks, or a single mock object, so hand-written files work too. For example, a voucher mock:
+
+```json
+{
+  "kind": "mintara-mocks",
+  "version": 1,
+  "mocks": [
+    {
+      "slug": "voucher",
+      "rules": [
+        {
+          "method": "POST",
+          "path": "/burn",
+          "response": {
+            "status": 200,
+            "headers": { "Content-Type": "application/json" },
+            "body": "{\"status\":\"success\",\"message\":\"Voucher burned\"}"
+          }
+        }
+      ],
+      "defaultResponse": { "status": 200, "headers": { "Content-Type": "application/json" }, "body": "{\"status\":\"success\"}" }
+    }
+  ]
+}
+```
+
+`VoucherExternal::sendVoucherTransaction` treats any reply without a top-level `status` key as "Response Connection Failed", so keep `status` in voucher responses. A rule's `id` is optional; one is generated when it's missing.
+
+**Storage and privacy:**
+- Mock definitions are saved to `~/.mintara/mocks.json` (or `$MINTARA_DATA_DIR/mocks.json`).
+- The request log is kept **in memory only**: up to 500 calls per slug, cleared on restart, and never written to disk or printed to the console. **Clear** empties one slug's log; **Clear all mocks** empties every log.
+
 ## Architecture
 
-Two independent product domains — API Diff Checker and File Diff Checker — each with their own folder on the client and server, plus a shared pure-logic package:
+Three independent product domains — API Diff Checker, File Diff Checker and Mock Webhook — each with their own folder on the client and server, plus a shared pure-logic package:
 
 ```
 mintara/
@@ -102,11 +171,13 @@ mintara/
 ├── server/          # Express API — the package published to npm
 │   └── src/domains/
 │       ├── api-diff/    # POST /api/compare, POST /api/summarize
-│       └── file-diff/   # POST /api/files/find
+│       ├── file-diff/   # POST /api/files/find
+│       └── mock-webhook/ # /hook/:slug/* receiver, /api/mocks management
 └── client/          # Vite + React SPA
     └── src/domains/
         ├── api-diff/    # Request builder, diff viewer, test cases
-        └── file-diff/   # Text diff checker, file finder
+        ├── file-diff/   # Text diff checker, file finder
+        └── mock-webhook/ # Mock editor, live request log
 ```
 
 See [CONTEXT.md](CONTEXT.md) for the domain vocabulary.
@@ -174,6 +245,22 @@ Execute parallel API requests and compare responses.
   "hasChanges": false
 }
 ```
+
+### Mock Webhook endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| any | `/hook/:slug` and `/hook/:slug/*` | The mock receiver itself |
+| `GET` | `/api/mocks` | List mocks |
+| `POST` | `/api/mocks` | Create `{ "slug": "x" }` |
+| `POST` | `/api/mocks/import` | `{ "mocks": [...], "resolutions": { "<slug>": "overwrite" \| "skip" } }`; existing slugs are skipped unless marked `overwrite` |
+| `GET` / `PUT` / `DELETE` | `/api/mocks/:slug` | Read / replace `rules` + `defaultResponse` / delete |
+| `POST` | `/api/mocks/:slug/rename` | `{ "newSlug": "y" }`; the request log moves with it |
+| `GET` | `/api/mocks/:slug/requests?limit=` | Request log, newest first |
+| `DELETE` | `/api/mocks/:slug/requests` | Clear one log |
+| `DELETE` | `/api/mocks/requests` | Clear every log |
+| `GET` | `/api/mocks/:slug/stream` | Server-Sent Events: `request` and `cleared` events |
+| `GET` | `/api/mocks/info` | `{ port }` |
 
 ## Development
 
