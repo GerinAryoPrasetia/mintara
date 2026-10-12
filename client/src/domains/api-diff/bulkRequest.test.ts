@@ -51,4 +51,25 @@ describe('buildBulkCompareRequest', () => {
     const result = buildBulkCompareRequest(item, baseRequest, {}, false)
     expect(result.normalization).toEqual({ ignoreFields: ['perItem'], sortArrays: true })
   })
+
+  it('applies a per-target path/body override only to the named target', () => {
+    const item: BulkRequestItem = {
+      ...baseItem,
+      targetOverrides: { 'PHP 8': { path: '/users?id=2', body: { name: 'Bob' } } },
+    }
+    const result = buildBulkCompareRequest(item, baseRequest, {}, false)
+    expect(result.targets[0].path).toBeUndefined()
+    expect(result.targets[0].body).toBeUndefined()
+    expect(result.targets[1].path).toBe('/users?id=2')
+    expect(result.targets[1].body).toEqual({ name: 'Bob' })
+    // the item-level request stays the shared default
+    expect(result.body).toEqual({ name: 'Alice' })
+  })
+
+  it('lets an override replace only the body, keeping the item path', () => {
+    const item: BulkRequestItem = { ...baseItem, targetOverrides: { 'PHP 8': { body: {} } } }
+    const result = buildBulkCompareRequest(item, baseRequest, {}, false)
+    expect(result.targets[1].path).toBeUndefined()
+    expect(result.targets[1].body).toEqual({})
+  })
 })

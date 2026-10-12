@@ -13,11 +13,19 @@ export interface NormalizationOptions {
   sortArrays: boolean
 }
 
+export interface CompareTarget {
+  name: string
+  baseUrl: string
+  headers: Record<string, string>
+  path?: string       // overrides CompareRequest.path for this target only
+  body?: unknown      // overrides CompareRequest.body for this target only
+}
+
 export interface CompareRequest {
   method: HttpMethod
   path: string
   body?: unknown
-  targets: Array<{ name: string; baseUrl: string; headers: Record<string, string> }>
+  targets: CompareTarget[]
   normalization: NormalizationOptions
 }
 
@@ -42,6 +50,14 @@ export interface BulkRequestItem {
   body?: unknown      // only for POST/PUT
   headers?: Record<string, string>  // used when usePerRequestHeaders = true
   normalization?: NormalizationOptions  // overrides global normalization when set
+  // keyed by target name; lets one target get its own path/body, e.g. a second
+  // unique doc number so inserts/deletes succeed on both targets of a shared DB
+  targetOverrides?: Record<string, TargetOverride>
+}
+
+export interface TargetOverride {
+  path?: string
+  body?: unknown
 }
 
 export interface BulkItemResult {

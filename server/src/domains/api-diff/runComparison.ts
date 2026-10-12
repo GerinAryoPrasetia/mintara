@@ -23,7 +23,8 @@ export async function runComparison(
 
   const targetResults: TargetResult[] = []
   for (const target of targets) {
-    const fullUrl = target.baseUrl.replace(/\/$/, '') + (path.startsWith('/') ? path : `/${path}`)
+    const targetPath = target.path ?? path
+    const fullUrl = target.baseUrl.replace(/\/$/, '') + (targetPath.startsWith('/') ? targetPath : `/${targetPath}`)
     const start = Date.now()
     try {
       console.log(`[${target.name}] ${method.toUpperCase()} ${fullUrl}`)
@@ -31,7 +32,7 @@ export async function runComparison(
         method: method.toLowerCase(),
         url: fullUrl,
         headers: target.headers ?? {},
-        data: requestBody,
+        data: target.body !== undefined ? target.body : requestBody,
         timeout: options.timeoutMs,
         validateStatus: () => true,
       })

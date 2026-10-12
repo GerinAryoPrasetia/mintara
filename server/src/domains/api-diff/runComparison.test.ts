@@ -74,4 +74,31 @@ describe('runComparison', () => {
 
     expect(mockedAxios).toHaveBeenNthCalledWith(1, expect.objectContaining({ url: 'https://old.example.com/users/1' }))
   })
+
+  it('sends a target its own path and body when the target overrides them', async () => {
+    mockedAxios.mockResolvedValue({ status: 200, data: true })
+
+    await runComparison(
+      {
+        ...baseRequest,
+        method: 'POST',
+        path: '/po/delete?num=A',
+        body: { num: 'A' },
+        targets: [
+          baseRequest.targets[0],
+          { ...baseRequest.targets[1], path: '/po/delete?num=B', body: { num: 'B' } },
+        ],
+      },
+      { timeoutMs: 1000, delayMs: 0 },
+    )
+
+    expect(mockedAxios).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ url: 'https://old.example.com/po/delete?num=A', data: { num: 'A' } }),
+    )
+    expect(mockedAxios).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ url: 'https://new.example.com/po/delete?num=B', data: { num: 'B' } }),
+    )
+  })
 })

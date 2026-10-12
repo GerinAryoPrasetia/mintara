@@ -12,6 +12,7 @@ import { HeadersEditor } from './HeadersEditor'
 import { NormalizationEditor } from './NormalizationEditor'
 import { QueryParamsEditor } from './QueryParamsEditor'
 import { TargetList } from './TargetList'
+import { TargetOverridesEditor, countOverrides } from './TargetOverridesEditor'
 import { AuthHeaderManager } from './AuthHeaderManager'
 import type { HttpMethod, BulkRequestItem, NormalizationOptions } from '@mintara/shared'
 
@@ -85,6 +86,7 @@ export function BulkRequestBuilder() {
   const [expandedBody, setExpandedBody] = useState<Set<string>>(new Set())
   const [expandedHeaders, setExpandedHeaders] = useState<Set<string>>(new Set())
   const [expandedNorm, setExpandedNorm] = useState<Set<string>>(new Set())
+  const [expandedOverrides, setExpandedOverrides] = useState<Set<string>>(new Set())
 
   // Per-item body editor error state
   const [editorErrors, setEditorErrors] = useState<Record<string, { body?: string }>>({})
@@ -95,8 +97,10 @@ export function BulkRequestBuilder() {
   function copyItemAsCurl(item: BulkRequestItem) {
     const compareReq = buildBulkCompareRequest(item, request, bulkSharedHeaders, usePerRequestHeaders)
     const curlBlocks = compareReq.targets.map((target) => {
-      const fullUrl = target.baseUrl.replace(/\/$/, '') + (item.path.startsWith('/') ? item.path : `/${item.path}`)
-      const curl = buildCurl(item.method, fullUrl, target.headers, item.body)
+      const path = target.path ?? item.path
+      const body = 'body' in target ? target.body : item.body
+      const fullUrl = target.baseUrl.replace(/\/$/, '') + (path.startsWith('/') ? path : `/${path}`)
+      const curl = buildCurl(item.method, fullUrl, target.headers, body)
       return `# ${target.name}\n${curl}`
     })
     navigator.clipboard.writeText(curlBlocks.join('\n\n')).catch(() => {})
@@ -158,6 +162,7 @@ export function BulkRequestBuilder() {
     setExpandedBody((s) => { const n = new Set(s); n.delete(id); return n })
     setExpandedHeaders((s) => { const n = new Set(s); n.delete(id); return n })
     setExpandedNorm((s) => { const n = new Set(s); n.delete(id); return n })
+    setExpandedOverrides((s) => { const n = new Set(s); n.delete(id); return n })
     setEditorErrors((prev) => { const next = { ...prev }; delete next[id]; return next })
   }
 
@@ -595,6 +600,8 @@ export function BulkRequestBuilder() {
           const isHeadersExpanded = expandedHeaders.has(item.id)
           const isNormExpanded = expandedNorm.has(item.id)
           const hasCustomNorm = item.normalization !== undefined
+          const isOverridesExpanded = expandedOverrides.has(item.id)
+          const overrideCount = countOverrides(item)
           const itemErrors = editorErrors[item.id] ?? {}
           const hasResult = bulkResults.some((r) => r.item.id === item.id && r.status !== 'pending')
 
@@ -705,6 +712,19 @@ export function BulkRequestBuilder() {
 
                   <button
                     type="button"
+                    onClick={() => setExpandedOverrides((s) => toggleExpand(s, item.id))}
+                    className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded border transition-colors ${
+                      overrideCount > 0
+                        ? 'border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100'
+                        : 'border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                    }`}
+                  >
+                    Target overrides{overrideCount > 0 ? ` (${overrideCount})` : ''}
+                    {isOverridesExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => {
                       if (!hasCustomNorm) updateItem(item.id, { normalization: DEFAULT_NORMALIZATION })
                       setExpandedNorm((s) => toggleExpand(s, item.id))
@@ -768,6 +788,16 @@ export function BulkRequestBuilder() {
                     </button>
                   )}
                 </div>
+              )}
+
+              {/* Per-target overrides */}
+              {isOverridesExpanded && (
+                <TargetOverridesEditor
+                  item={item}
+                  targetNames={request.targets.map((t) => t.name)}
+                  showBody={showBody}
+                  onChange={(targetOverrides) => updateItem(item.id, { targetOverrides })}
+                />
               )}
 
               {/* Per-request normalization editor */}
