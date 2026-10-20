@@ -2,7 +2,7 @@ import ExcelJS from 'exceljs'
 import JSZip from 'jszip'
 import html2canvas from 'html2canvas'
 import type { CompareRequest, CompareResult, DiffNode, BulkItemResult, BulkRequestItem, NormalizationOptions } from '@mintara/shared'
-import { diffTargets } from './diff'
+import { diffTargets, isFullDiffTooLarge } from './diff'
 
 export function exportJSON(
   request: CompareRequest,
@@ -212,6 +212,7 @@ export async function exportBulkExcel(
     { header: 'Matched?', key: 'matched', width: 12 },
     ...targetNames.map((name) => ({ header: `${name} HTTP`, key: `${name}_http`, width: 12 })),
     { header: 'Error', key: 'error', width: 40 },
+    ...targetNames.map((name) => ({ header: `${name} Response`, key: `${name}_response`, width: 60 })),
     ...(bulkItemSummaries ? [{ header: 'AI Summary', key: 'aiSummary', width: 60 }] : []),
   ]
 
@@ -235,9 +236,16 @@ export async function exportBulkExcel(
       error: entry.error ?? '',
       ...(bulkItemSummaries ? { aiSummary: bulkItemSummaries[entry.item.id] ?? '' } : {}),
     }
-    for (const target of entry.result?.targets ?? []) {
+    const targets = entry.result?.targets ?? []
+    const bodyTexts = targets.map((t) => JSON.stringify(t.body, null, 2) ?? '')
+    // Same rule as DiffViewer: if the UI hides the full response, leave it out here too.
+    const tooLarge = targets.length >= 2 && isFullDiffTooLarge(bodyTexts[0], bodyTexts[1])
+    targets.forEach((target, i) => {
       rowData[`${target.name}_http`] = target.status
-    }
+      rowData[`${target.name}_response`] = tooLarge
+        ? `(hidden — response too large, ${Math.round((bodyTexts[0].length + bodyTexts[1].length) / 1024)}KB combined)`
+        : excelCellText(target.body, bodyTexts[i])
+    })
     const row = summarySheet.addRow(rowData)
     const fillColor = entry.result?.hasChanges ? 'FFFEF08A' : STATUS_FILL[entry.status] ?? 'FFFFFFFF'
     row.eachCell((cell) => {
@@ -299,6 +307,17 @@ export async function exportBulkExcel(
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   })
   triggerDownload(blob, filename)
+}
+
+// Excel rejects cells longer than 32,767 characters.
+const EXCEL_MAX_CELL_CHARS = 32_767
+
+function excelCellText(body: unknown, pretty: string): string {
+  if (body === null || body === undefined) return ''
+  if (pretty.length <= EXCEL_MAX_CELL_CHARS) return pretty
+  const compact = JSON.stringify(body)
+  if (compact.length <= EXCEL_MAX_CELL_CHARS) return compact
+  return `(omitted — ${Math.round(compact.length / 1024)}KB exceeds Excel's cell limit)`
 }
 
 function triggerDownload(blob: Blob, filename: string): void {

@@ -15,3 +15,10 @@ export function diffTargets(
   const normB = normalize(bodyB, normalization)
   return compare(normA, normB, '')
 }
+
+/** Combined pretty-printed size above which the full response diff is hidden. */
+export const FULL_DIFF_MAX_CHARS = 100_000
+
+export function isFullDiffTooLarge(textA: string, textB: string): boolean {
+  return textA.length + textB.length > FULL_DIFF_MAX_CHARS
+}

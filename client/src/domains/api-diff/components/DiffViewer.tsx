@@ -2,7 +2,7 @@ import React, { useMemo } from 'react'
 import ReactDiffViewerLib from 'react-diff-viewer-continued'
 const ReactDiffViewer = (ReactDiffViewerLib as any).default ?? ReactDiffViewerLib
 import { Badge } from '../../../components_ui/ui/badge'
-import { diffTargets } from '../diff'
+import { diffTargets, isFullDiffTooLarge } from '../diff'
 import type { TargetResult, NormalizationOptions, DiffNode } from '@mintara/shared'
 
 interface DiffViewerProps {
@@ -24,7 +24,7 @@ export function DiffViewer({ targetA, targetB, normalization }: DiffViewerProps)
 
   const aText = JSON.stringify(targetA.body, null, 2) ?? ''
   const bText = JSON.stringify(targetB.body, null, 2) ?? ''
-  const fullDiffTooLarge = aText.length + bText.length > 100_000
+  const fullDiffTooLarge = isFullDiffTooLarge(aText, bText)
 
   return (
     <div className="space-y-4">
