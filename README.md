@@ -93,22 +93,19 @@ Available variables:
 
 ### Mock Webhook
 
-A local stand-in for webhook.site, for when the code under test calls a third-party API (voucher burn, voucher validate, billing, …). The **server** serves the mocks on its own port, so Docker containers can reach them.
+A local stand-in for webhook.site, for when the code under test calls a third-party API (payments, notifications, billing, …). The **server** serves the mocks on its own port, so Docker containers and other machines on your network can reach them.
 
 1. Open **Mock Webhook** in the left menu.
 2. Type a slug (lowercase letters, digits, `-`, `_`) and press **+**, or **Import** a mock file (see below).
-3. Paste the endpoint URL into the caller's config. From the `php5` / `php8-new` containers, use the `host.docker.internal` form:
+3. Paste the endpoint URL into the caller's config (an env var, config file, or setting). From a Docker container, use the `host.docker.internal` form:
 
-   ```php
-   // config/params_local.php
-   'platformUrl' => [
-       'platformVoucherUrl' => 'http://host.docker.internal:3001/hook/voucher',
-   ],
+   ```
+   EXTERNAL_API_URL=http://host.docker.internal:3001/hook/my-api
    ```
 
-   From the host itself, use `http://localhost:3001/hook/voucher`.
+   From the host itself, use `http://localhost:3001/hook/my-api`.
 4. Edit the rules, then click **Save**. Each rule has a method (or `ANY`), a sub-path, a status, headers, a body and an optional delay.
-   - The sub-path is the part after `/hook/<slug>`. It's either exact (`/burn`) or a glob, where `*` matches anything, `/` included (`/voucher/*`).
+   - The sub-path is the part after `/hook/<slug>`. It's either exact (`/charge`) or a glob, where `*` matches anything, `/` included (`/orders/*`).
    - Rules are checked top to bottom and the first match wins. Anything unmatched gets the slug's default response.
    - A slug that doesn't exist gets `404 {"error":"unknown mock slug"}`, and the call is still logged.
 5. Calls show up live in the request log. Each entry shows the headers, the query, the body (pretty-printed when it's JSON) and the exact response that was sent, and has a **Copy as cURL** button.
@@ -117,8 +114,8 @@ A local stand-in for webhook.site, for when the code under test calls a third-pa
 
 | Placeholder | Fills in |
 |-------------|----------|
-| `{{body.voucherCodes.0}}` | a value from the JSON body (dot path, array indexes allowed) |
-| `{{query.branchCode}}` | a query-string parameter |
+| `{{body.items.0}}` | a value from the JSON body (dot path, array indexes allowed) |
+| `{{query.userId}}` | a query-string parameter |
 | `{{headers.x-request-id}}` | a request header (case-insensitive) |
 | `{{uuid}}` / `{{now}}` / `{{timestamp}}` | a random UUID / ISO time / epoch ms |
 
@@ -126,7 +123,7 @@ Strings are inserted as-is, with no JSON escaping. Other values are JSON-encoded
 
 **Import / Export** works the same way as for test cases.
 - **Export:** select one or more mocks, then click **Export (n)**. One mock downloads as a `.json` file; several download as a `.zip` with one `.json` per mock.
-- **Import:** accepts a `.json` or `.zip` file. If a slug already exists, you choose **Overwrite** or **Skip** for it. A file can be a mintara export, a bare array of mocks, or a single mock object, so hand-written files work too. For example, a voucher mock:
+- **Import:** accepts a `.json` or `.zip` file. If a slug already exists, you choose **Overwrite** or **Skip** for it. A file can be a mintara export, a bare array of mocks, or a single mock object, so hand-written files work too. For example:
 
 ```json
 {
@@ -134,15 +131,15 @@ Strings are inserted as-is, with no JSON escaping. Other values are JSON-encoded
   "version": 1,
   "mocks": [
     {
-      "slug": "voucher",
+      "slug": "my-api",
       "rules": [
         {
           "method": "POST",
-          "path": "/burn",
+          "path": "/charge",
           "response": {
             "status": 200,
             "headers": { "Content-Type": "application/json" },
-            "body": "{\"status\":\"success\",\"message\":\"Voucher burned\"}"
+            "body": "{\"status\":\"success\",\"message\":\"Charged\"}"
           }
         }
       ],
@@ -152,7 +149,7 @@ Strings are inserted as-is, with no JSON escaping. Other values are JSON-encoded
 }
 ```
 
-`VoucherExternal::sendVoucherTransaction` treats any reply without a top-level `status` key as "Response Connection Failed", so keep `status` in voucher responses. A rule's `id` is optional; one is generated when it's missing.
+A rule's `id` is optional; one is generated when it's missing.
 
 **Storage and privacy:**
 - Mock definitions are saved to `~/.mintara/mocks.json` (or `$MINTARA_DATA_DIR/mocks.json`).
